@@ -1249,9 +1249,17 @@ function waitForUploadAck(transfer, offset, timeoutMs) {
   });
 }
 
+function clearUploadPendingAcks(transfer, reason) {
+  transfer.pendingAcks.forEach((pending, _offset) => {
+    clearTimeout(pending.timeoutId);
+    pending.reject(new Error(reason));
+  });
+  transfer.pendingAcks.clear();
+}
+
 async function sendChunkWithRetry(transfer, payload, offset) {
-  const maxRetries = 3;
-  const ackTimeoutMs = 15000;
+  const maxRetries = 5;
+  const ackTimeoutMs = 20000;
   const backoffMs = 300;
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
@@ -1314,13 +1322,68 @@ async function uploadFile(file) {
   activeTransfers.set(transferId, transfer);
   addTransferToUI(transfer);
 
-  const chunkSize = 512 * 1024;
+  const chunkSize = 900 * 1024;
+  const maxInFlightChunks = 6;
   transfer.expectedChunks = Math.max(1, Math.ceil(file.size / chunkSize));
-  let offset = 0;
+  let nextOffset = 0;
+  const inFlight = new Set();
+
+  const processChunk = async (offset) => {
+    const chunk = file.slice(offset, offset + chunkSize);
+    const arrayBuffer = await chunk.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    const payload = {
+      type: "file_upload",
+      path,
+      data: uint8Array,
+      offset,
+      transferId,
+      total: file.size,
+    };
+    const ack = await sendChunkWithRetry(transfer, payload, offset);
+
+    if (!transfer.ackedOffsets.has(offset)) {
+      transfer.ackedOffsets.add(offset);
+      transfer.receivedChunks += 1;
+    }
+
+    if (Number.isFinite(ack?.received)) {
+      transfer.receivedBytes = Math.min(Number(ack.received), transfer.total);
+      transfer.sent = transfer.receivedBytes;
+    } else {
+      transfer.receivedBytes = Math.min(transfer.receivedBytes + chunk.size, transfer.total);
+      transfer.sent = transfer.receivedBytes;
+    }
+
+    transfer.progress = Math.round((transfer.sent / file.size) * 100);
+    updateTransferProgress(transferId, transfer.progress, transfer.sent, file.size);
+  };
+
+  const fillUploadWindow = () => {
+    while (
+      !transfer.cancelled &&
+      nextOffset < file.size &&
+      inFlight.size < maxInFlightChunks
+    ) {
+      const offset = nextOffset;
+      nextOffset += chunkSize;
+
+      const task = processChunk(offset).finally(() => {
+        inFlight.delete(task);
+      });
+      inFlight.add(task);
+    }
+  };
 
   try {
-    while (offset < file.size) {
+    fillUploadWindow();
+
+    while (inFlight.size > 0) {
+      await Promise.race(inFlight);
+
       if (transfer.cancelled) {
+        clearUploadPendingAcks(transfer, "Upload cancelled");
         console.log("Upload cancelled:", path);
         removeTransfer(transferId);
         fileUploads.delete(path);
@@ -1328,29 +1391,7 @@ async function uploadFile(file) {
         return;
       }
 
-      const chunk = file.slice(offset, offset + chunkSize);
-      const arrayBuffer = await chunk.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-
-      const payload = { type: "file_upload", path, data: uint8Array, offset, transferId, total: file.size };
-      const ack = await sendChunkWithRetry(transfer, payload, offset);
-
-      if (!transfer.ackedOffsets.has(offset)) {
-        transfer.ackedOffsets.add(offset);
-        transfer.receivedChunks += 1;
-      }
-
-      if (Number.isFinite(ack?.received)) {
-        transfer.receivedBytes = Math.min(Number(ack.received), transfer.total);
-        transfer.sent = transfer.receivedBytes;
-      } else {
-        transfer.sent = offset + chunk.size;
-      }
-
-      transfer.progress = Math.round((transfer.sent / file.size) * 100);
-      updateTransferProgress(transferId, transfer.progress, transfer.sent, file.size);
-
-      offset += chunk.size;
+      fillUploadWindow();
     }
 
     transfer.completed = true;
@@ -1358,6 +1399,7 @@ async function uploadFile(file) {
       finishUpload(transfer);
     }
   } catch (err) {
+    clearUploadPendingAcks(transfer, "Upload aborted");
     console.error("Upload error:", err);
     removeTransfer(transferId);
     fileUploads.delete(path);
