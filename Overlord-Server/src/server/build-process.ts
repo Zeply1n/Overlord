@@ -162,7 +162,7 @@ export async function startBuildProcess(
       sendToStream({ type: "status", text: `Building ${platform}...` });
       sendToStream({ type: "output", text: `\n=== Building ${platform} ===\n`, level: "info" });
 
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         ...process.env,
         GOOS: os,
         GOARCH: actualArch,
