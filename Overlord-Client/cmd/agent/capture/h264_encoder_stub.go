@@ -15,4 +15,8 @@ func h264Available() bool {
 	return false
 }
 
+func h264AvailabilityDetail() string {
+	return "cgo disabled in this build"
+}
+
 func resetH264Encoder() {}

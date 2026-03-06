@@ -4,6 +4,7 @@ package capture
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"sync"
 
@@ -11,11 +12,12 @@ import (
 )
 
 var (
-	h264Mu     sync.Mutex
-	h264Enc    *x264.Encoder
-	h264Buf    bytes.Buffer
-	h264Width  int
-	h264Height int
+	h264Mu      sync.Mutex
+	h264Enc     *x264.Encoder
+	h264Buf     bytes.Buffer
+	h264Width   int
+	h264Height  int
+	h264LastErr error
 )
 
 func encodeH264Frame(img *image.RGBA) ([]byte, error) {
@@ -27,13 +29,16 @@ func encodeH264Frame(img *image.RGBA) ([]byte, error) {
 	defer h264Mu.Unlock()
 
 	if err := ensureH264EncoderLocked(width, height); err != nil {
+		h264LastErr = err
 		return nil, err
 	}
 
 	h264Buf.Reset()
 	if err := h264Enc.Encode(img); err != nil {
+		h264LastErr = err
 		return nil, err
 	}
+	h264LastErr = nil
 
 	out := make([]byte, h264Buf.Len())
 	copy(out, h264Buf.Bytes())
@@ -42,6 +47,15 @@ func encodeH264Frame(img *image.RGBA) ([]byte, error) {
 
 func h264Available() bool {
 	return true
+}
+
+func h264AvailabilityDetail() string {
+	h264Mu.Lock()
+	defer h264Mu.Unlock()
+	if h264LastErr != nil {
+		return fmt.Sprintf("x264 runtime error: %v", h264LastErr)
+	}
+	return "cgo build with x264-go"
 }
 
 func ensureH264EncoderLocked(width, height int) error {

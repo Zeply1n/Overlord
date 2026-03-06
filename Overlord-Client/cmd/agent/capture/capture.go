@@ -312,10 +312,20 @@ type prevImage struct {
 func logCodecSupport() {
 	codecLogOnce.Do(func() {
 		if h264Available() {
+			detail := h264AvailabilityDetail()
+			if detail != "" {
+				log.Printf("capture: codec support h264=enabled (%s) jpeg=enabled", detail)
+				return
+			}
 			log.Printf("capture: codec support h264=enabled jpeg=enabled")
 			return
 		}
-		log.Printf("capture: codec support h264=disabled (cgo off), jpeg=enabled")
+		detail := h264AvailabilityDetail()
+		if detail != "" {
+			log.Printf("capture: codec support h264=disabled (%s), jpeg=enabled", detail)
+			return
+		}
+		log.Printf("capture: codec support h264=disabled, jpeg=enabled")
 	})
 }
 
@@ -483,6 +493,11 @@ func buildFrame(img *image.RGBA, display int, quality int) (wire.Frame, time.Dur
 			return wire.Frame{Type: "frame", Header: wire.FrameHeader{Monitor: display, FPS: 0, Format: "h264"}, Data: h264Bytes}, time.Since(encStart), nil
 		}
 		h264WarnOnce.Do(func() {
+			detail := h264AvailabilityDetail()
+			if detail != "" {
+				log.Printf("capture: h264 encode unavailable, falling back to jpeg: %v (%s)", err, detail)
+				return
+			}
 			log.Printf("capture: h264 encode unavailable, falling back to jpeg: %v", err)
 		})
 		codec = "jpeg"
@@ -579,6 +594,11 @@ func buildFrameHVNC(img *image.RGBA, display int, quality int) (wire.Frame, time
 			return frame, time.Since(encStart), nil
 		}
 		h264WarnOnce.Do(func() {
+			detail := h264AvailabilityDetail()
+			if detail != "" {
+				log.Printf("hvnc capture: h264 encode unavailable, falling back to jpeg: %v (%s)", err, detail)
+				return
+			}
 			log.Printf("hvnc capture: h264 encode unavailable, falling back to jpeg: %v", err)
 		})
 		codec = "jpeg"
@@ -1198,7 +1218,12 @@ func SetQualityAndCodec(quality int, codec string) {
 	}
 	s := strings.ToLower(strings.TrimSpace(codec))
 	if s == "h264" && !h264Available() {
-		log.Printf("capture: requested codec=h264 but unavailable; forcing codec=jpeg")
+		detail := h264AvailabilityDetail()
+		if detail != "" {
+			log.Printf("capture: requested codec=h264 but unavailable (%s); forcing codec=jpeg", detail)
+		} else {
+			log.Printf("capture: requested codec=h264 but unavailable; forcing codec=jpeg")
+		}
 		s = "jpeg"
 	}
 	switch s {
