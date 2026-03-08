@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"overlord-client/cmd/agent/config"
 	rt "overlord-client/cmd/agent/runtime"
@@ -18,6 +19,7 @@ func TestHandlePing(t *testing.T) {
 		Conn: writer,
 		Cfg:  config.Config{},
 	}
+	env.SetLastPong(0)
 
 	ctx := context.Background()
 	envelope := map[string]interface{}{
@@ -43,6 +45,13 @@ func TestHandlePing(t *testing.T) {
 	expectedTS := int64(1234567890)
 	if pong.TS != expectedTS {
 		t.Errorf("Expected timestamp %d, got %d", expectedTS, pong.TS)
+	}
+
+	if env.LastPong().IsZero() {
+		t.Fatalf("expected LastPong to be updated on ping")
+	}
+	if time.Since(env.LastPong()) > 5*time.Second {
+		t.Fatalf("expected LastPong to be recent, got %s", env.LastPong())
 	}
 }
 

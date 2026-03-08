@@ -15,6 +15,14 @@ import (
 const registryKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
 const registryValueName = "OverlordAgent"
 
+func formatRunRegistryCommand(exePath string) string {
+	trimmed := filepath.Clean(exePath)
+	if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		return trimmed
+	}
+	return fmt.Sprintf("\"%s\"", trimmed)
+}
+
 func getTargetPath() (string, error) {
 	appDataDir := os.Getenv("APPDATA")
 	if appDataDir == "" {
@@ -46,7 +54,7 @@ func install(exePath string) error {
 	}
 	defer k.Close()
 
-	err = k.SetStringValue(registryValueName, targetPath)
+	err = k.SetStringValue(registryValueName, formatRunRegistryCommand(targetPath))
 	if err != nil {
 		return fmt.Errorf("failed to set registry value: %w", err)
 	}
@@ -101,7 +109,7 @@ func configure(exePath string) error {
 	}
 	defer k.Close()
 
-	if err := k.SetStringValue(registryValueName, exePath); err != nil {
+	if err := k.SetStringValue(registryValueName, formatRunRegistryCommand(exePath)); err != nil {
 		return fmt.Errorf("failed to set registry value: %w", err)
 	}
 
