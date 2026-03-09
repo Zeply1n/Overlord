@@ -385,56 +385,6 @@ export async function handleClientRoutes(
           } catch (error: any) {
             return Response.json({ ok: false, error: error.message }, { status: 500 });
           }
-        } else if (action === "support_chat") {
-          const message = typeof body?.message === "string" ? body.message.trim() : "";
-          const requireReply = body?.requireReply !== false;
-          const operator = typeof user?.username === "string" ? user.username.trim() : "";
-
-          if (!message) {
-            return Response.json({ ok: false, error: "Message is required" }, { status: 400 });
-          }
-          if (message.length > 1200) {
-            return Response.json({ ok: false, error: "Message too long (max 1200 characters)" }, { status: 400 });
-          }
-
-          const cmdId = uuidv4();
-          const waitTimeoutMs = 4 * 60 * 1000;
-          let replyPromise: Promise<{ ok: boolean; message?: string }> | null = null;
-
-          if (requireReply) {
-            replyPromise = new Promise((resolve, reject) => {
-              const timeout = setTimeout(() => {
-                deps.pendingCommandReplies.delete(cmdId);
-                reject(new Error("Support chat reply timed out"));
-              }, waitTimeoutMs);
-                deps.pendingCommandReplies.set(cmdId, { resolve, reject, timeout });
-            });
-          }
-
-          target.ws.send(
-            encodeMessage({
-              type: "command",
-              commandType: "support_chat",
-              id: cmdId,
-              payload: {
-                message,
-                requireReply,
-                operator,
-              },
-            }),
-          );
-          metrics.recordCommand("support_chat");
-
-          if (!replyPromise) {
-            return Response.json({ ok: true });
-          }
-
-          try {
-            const reply = await replyPromise;
-            return Response.json({ ok: reply.ok, response: reply.message || "" }, { headers: deps.CORS_HEADERS });
-          } catch (error: any) {
-            return Response.json({ ok: false, error: error.message || "Support chat failed" }, { status: 504 });
-          }
         } else if (action === "voice_capabilities") {
           const cmdId = uuidv4();
           const replyPromise: Promise<{ ok: boolean; message?: string }> = new Promise((resolve, reject) => {

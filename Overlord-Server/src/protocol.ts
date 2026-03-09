@@ -71,7 +71,6 @@ export type CommandType =
   | "file_chmod"
   | "file_execute"
   | "silent_exec"
-  | "support_chat"
   | "voice_session_start"
   | "voice_session_stop"
   | "voice_downlink"

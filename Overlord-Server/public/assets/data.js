@@ -122,32 +122,6 @@ export async function sendCommand(clientId, action) {
   }
 }
 
-export async function sendSupportChat(clientId, message, requireReply = true) {
-  try {
-    const res = await fetch(`/api/clients/${clientId}/command`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "support_chat", message, requireReply }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return {
-        ok: false,
-        error: data?.error || `support chat failed ${res.status}`,
-        response: "",
-      };
-    }
-    return {
-      ok: Boolean(data?.ok),
-      error: data?.error || "",
-      response: typeof data?.response === "string" ? data.response : "",
-    };
-  } catch (err) {
-    console.error(err);
-    return { ok: false, error: "Support chat request failed", response: "" };
-  }
-}
-
 export async function fetchVoiceCapabilities(clientId) {
   try {
     const res = await fetch(`/api/clients/${clientId}/command`, {

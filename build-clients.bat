@@ -131,6 +131,34 @@ set CGO_ENABLED=0
 %BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-darwin-amd64" ./cmd/agent
 if errorlevel 1 goto :err
 
+echo == Building agent for freebsd amd64 ==
+set GOOS=freebsd
+set GOARCH=amd64
+set CGO_ENABLED=0
+%BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-freebsd-amd64" ./cmd/agent
+if errorlevel 1 goto :err
+
+echo == Building agent for freebsd arm64 ==
+set GOOS=freebsd
+set GOARCH=arm64
+set CGO_ENABLED=0
+%BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-freebsd-arm64" ./cmd/agent
+if errorlevel 1 goto :err
+
+echo == Building agent for openbsd amd64 ==
+set GOOS=openbsd
+set GOARCH=amd64
+set CGO_ENABLED=0
+%BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-openbsd-amd64" ./cmd/agent
+if errorlevel 1 goto :err
+
+echo == Building agent for openbsd arm64 ==
+set GOOS=openbsd
+set GOARCH=arm64
+set CGO_ENABLED=0
+%BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-openbsd-arm64" ./cmd/agent
+if errorlevel 1 goto :err
+
 echo Builds complete. Outputs in %OUT_DIR%
 goto :eof
 

@@ -17,6 +17,8 @@ ARCH="$(uname -m)"
 case "$OS" in
   Darwin) PLATFORM="mac";;
   Linux) PLATFORM="linux";;
+  FreeBSD) PLATFORM="freebsd";;
+  OpenBSD) PLATFORM="openbsd";;
   *) PLATFORM="unknown";;
 esac
 
@@ -32,6 +34,18 @@ if [ "$PLATFORM" = "mac" ]; then
   fi
 elif [ "$PLATFORM" = "linux" ]; then
   BIN_NAME="agent-linux-amd64"
+elif [ "$PLATFORM" = "freebsd" ]; then
+  if [ "$ARCH" = "x86_64" ]; then
+    BIN_NAME="agent-freebsd-amd64"
+  elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    BIN_NAME="agent-freebsd-arm64"
+  fi
+elif [ "$PLATFORM" = "openbsd" ]; then
+  if [ "$ARCH" = "x86_64" ]; then
+    BIN_NAME="agent-openbsd-amd64"
+  elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    BIN_NAME="agent-openbsd-arm64"
+  fi
 fi
 
 if [ -n "$BIN_NAME" ] && [ -x "$DIST_DIR/$BIN_NAME" ]; then
