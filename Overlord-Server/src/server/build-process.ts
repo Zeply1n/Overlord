@@ -167,6 +167,27 @@ export async function startBuildProcess(
       throw new Error("One or more requested platforms are not allowed");
     }
 
+    const hasAndroidTargets = platformsToBuild.some((p) => p.startsWith("android-"));
+    const hasBsdTargets = platformsToBuild.some(
+      (p) => p.startsWith("freebsd-") || p.startsWith("openbsd-"),
+    );
+
+    if (hasAndroidTargets) {
+      sendToStream({
+        type: "output",
+        text: "WARNING: Android targets are severely untested and will probably not work right.\n",
+        level: "warn",
+      });
+    }
+
+    if (hasBsdTargets) {
+      sendToStream({
+        type: "output",
+        text: "WARNING: BSD targets are severely untested and will probably not work right.\n",
+        level: "warn",
+      });
+    }
+
     const ndkBin = resolveAndroidNdkToolchainBin();
     if (!ndkBin && platformsToBuild.some((p) => p.startsWith("android-"))) {
       sendToStream({

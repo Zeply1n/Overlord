@@ -131,6 +131,8 @@ set CGO_ENABLED=0
 %BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-darwin-amd64" ./cmd/agent
 if errorlevel 1 goto :err
 
+echo WARNING: BSD targets are severely untested and will probably not work right.
+
 echo == Building agent for freebsd amd64 ==
 set GOOS=freebsd
 set GOARCH=amd64
@@ -144,6 +146,8 @@ set GOARCH=arm64
 set CGO_ENABLED=0
 %BUILD_CMD% %BUILD_TAGS% -ldflags="%LDFLAGS%" -o "%OUT_DIR%\agent-freebsd-arm64" ./cmd/agent
 if errorlevel 1 goto :err
+
+echo WARNING: Android targets are severely untested and will probably not work right.
 
 echo == Building agent for android arm64 ==
 set GOOS=android

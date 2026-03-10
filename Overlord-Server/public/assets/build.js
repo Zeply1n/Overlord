@@ -195,6 +195,28 @@ form?.addEventListener("submit", async (e) => {
   };
 
   const hasAndroid = platforms.some(p => p.startsWith('android-'));
+  const hasBsd = platforms.some(
+    p => p.startsWith('freebsd-') || p.startsWith('openbsd-'),
+  );
+
+  if (hasAndroid || hasBsd) {
+    let warningText = 'WARNING: Some selected targets are severely untested and will probably not work right.\n\n';
+
+    if (hasAndroid) {
+      warningText += '- Android targets are severely untested and will probably not work right.\n';
+    }
+
+    if (hasBsd) {
+      warningText += '- BSD targets are severely untested and will probably not work right.\n';
+    }
+
+    warningText += '\nContinue with build anyway?';
+
+    if (!confirm(warningText)) {
+      return;
+    }
+  }
+
   if (hasAndroid && enablePersistence) {
     if (!confirm(
       '⚠️ WARNING: Persistence is NOT supported on Android\n\n' +
