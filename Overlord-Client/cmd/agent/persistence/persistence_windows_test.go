@@ -4,37 +4,51 @@
 package persistence
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestFormatRunRegistryCommand_QuotesUnquotedPath(t *testing.T) {
-	in := `C:\Users\Test User\AppData\Roaming\Overlord\agent.exe`
-	got := formatRunRegistryCommand(in)
-	want := `"C:\Users\Test User\AppData\Roaming\Overlord\agent.exe"`
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
-	}
-}
+func TestGetTargetPath_UsesStartupFolderAndRandomizedOvdName(t *testing.T) {
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
 
-func TestFormatRunRegistryCommand_LeavesQuotedPath(t *testing.T) {
-	in := `"C:\Users\Test User\AppData\Roaming\Overlord\agent.exe"`
-	got := formatRunRegistryCommand(in)
-	if got != in {
-		t.Fatalf("expected %q, got %q", in, got)
-	}
-}
-
-func TestGenerateStartupValueName(t *testing.T) {
-	name, err := generateStartupValueName()
+	got, err := getTargetPath()
 	if err != nil {
-		t.Fatalf("generateStartupValueName failed: %v", err)
+		t.Fatalf("getTargetPath failed: %v", err)
 	}
-	if !strings.HasPrefix(name, registryValuePrefix) {
-		t.Fatalf("expected prefix %q, got %q", registryValuePrefix, name)
+
+	wantDir := filepath.Join(appData, startupFolderRelative)
+	if !strings.EqualFold(filepath.Clean(filepath.Dir(got)), filepath.Clean(wantDir)) {
+		t.Fatalf("expected dir %q, got %q", wantDir, filepath.Dir(got))
 	}
-	if len(name) != len(registryValuePrefix)+12 {
-		t.Fatalf("expected random suffix length 12, got name=%q", name)
+	base := strings.ToLower(filepath.Base(got))
+	if !strings.HasPrefix(base, startupExecutablePrefix) || !strings.HasSuffix(base, ".exe") {
+		t.Fatalf("expected randomized ovd_*.exe name, got %q", filepath.Base(got))
+	}
+}
+
+func TestGetTargetPath_PrefersExistingPrefixedExecutable(t *testing.T) {
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	startupDir := filepath.Join(appData, startupFolderRelative)
+	if err := os.MkdirAll(startupDir, 0755); err != nil {
+		t.Fatalf("mkdir startup dir failed: %v", err)
+	}
+
+	expected := filepath.Join(startupDir, "ovlrd_existing.exe")
+	if err := os.WriteFile(expected, []byte("x"), 0644); err != nil {
+		t.Fatalf("write startup executable failed: %v", err)
+	}
+
+	got, err := getTargetPath()
+	if err != nil {
+		t.Fatalf("getTargetPath failed: %v", err)
+	}
+
+	if !strings.EqualFold(filepath.Clean(got), filepath.Clean(expected)) {
+		t.Fatalf("expected existing startup executable %q, got %q", expected, got)
 	}
 }
 
