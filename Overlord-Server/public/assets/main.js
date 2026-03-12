@@ -36,12 +36,41 @@ const bulkScreenshotBtn = document.getElementById("bulk-screenshot");
 const bulkDisconnectBtn = document.getElementById("bulk-disconnect");
 const bulkUninstallBtn = document.getElementById("bulk-uninstall");
 const bulkClearBtn = document.getElementById("bulk-clear");
+const serverVersionText = document.getElementById("server-version-text");
 const selectedClients = new Set();
 let lastNonOnlineStatus = "all";
 
 let currentUser = null;
 let contextCard = null;
 let availableOsList = new Set();
+
+function setServerVersionLabel(version) {
+  if (!serverVersionText) return;
+  serverVersionText.textContent = "Server version: ";
+  const value = document.createElement("span");
+  value.className = "server-version-number";
+  value.textContent = version;
+  serverVersionText.appendChild(value);
+}
+
+async function loadServerVersion() {
+  if (!serverVersionText) return;
+  try {
+    const res = await fetch("/api/version", { credentials: "include" });
+    if (!res.ok) {
+      serverVersionText.textContent = "Server version: unavailable";
+      return;
+    }
+    const payload = await res.json();
+    const version = typeof payload?.version === "string" && payload.version.trim()
+      ? payload.version.trim()
+      : "unknown";
+    setServerVersionLabel(version);
+  } catch {
+    serverVersionText.textContent = "Server version: unavailable";
+  }
+}
+
 const setContext = (id) => {
   contextCard = id;
 };
@@ -108,6 +137,7 @@ function applyMenuSupportRules(clientId) {
 }
 
 async function loadCurrentUser() {
+  loadServerVersion();
   try {
     const res = await fetch("/api/auth/me");
     if (res.ok) {

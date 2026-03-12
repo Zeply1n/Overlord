@@ -563,6 +563,7 @@ export interface BuildRecord {
     name: string;
     filename: string;
     platform: string;
+    version?: string;
     size: number;
   }>;
 }

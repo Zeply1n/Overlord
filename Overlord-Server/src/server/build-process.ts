@@ -70,6 +70,17 @@ type BuildProcessDeps = {
   sanitizeOutputName: (name: string) => string;
 };
 
+function detectAgentVersion(clientDir: string): string {
+  try {
+    const configPath = path.join(clientDir, "cmd", "agent", "config", "config.go");
+    const content = fs.readFileSync(configPath, "utf8");
+    const match = content.match(/var\s+AgentVersion\s*=\s*"([^"]+)"/);
+    return match?.[1]?.trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export async function startBuildProcess(
   buildId: string,
   config: BuildProcessConfig,
@@ -150,6 +161,7 @@ export async function startBuildProcess(
         `Overlord-Client source not found (missing go.mod). Checked: ${path.join(rootDir, "dist", "Overlord-Client")}, ${path.join(rootDir, "Overlord-Client")}`,
       );
     }
+    const agentVersion = detectAgentVersion(clientDir);
     const outDir = path.join(rootDir, "dist-clients");
     const cacheRoot = resolveClientBuildCacheRoot();
     const goBuildCacheDir = path.join(cacheRoot, "go-build");
@@ -160,6 +172,7 @@ export async function startBuildProcess(
     fs.mkdirSync(goModCacheDir, { recursive: true });
     sendToStream({ type: "output", text: `Build directory: ${outDir}\n`, level: "info" });
     sendToStream({ type: "output", text: `Client source: ${clientDir}\n`, level: "info" });
+    sendToStream({ type: "output", text: `Stub version: ${agentVersion}\n`, level: "info" });
     sendToStream({ type: "output", text: `Client build cache: ${cacheRoot}\n`, level: "info" });
 
     const platformsToBuild = (config.platforms || []).filter((p) => ALLOWED_PLATFORMS.has(p));
@@ -371,6 +384,7 @@ export async function startBuildProcess(
           name: outputName,
           filename: outputName,
           platform,
+          version: agentVersion,
           size,
         });
       } catch (err: any) {

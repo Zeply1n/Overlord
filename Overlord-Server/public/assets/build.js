@@ -540,6 +540,13 @@ function formatFileSize(bytes) {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 }
 
+function formatStubVersion(version) {
+  if (typeof version === "string" && version.trim()) {
+    return version.trim();
+  }
+  return "unknown (legacy build)";
+}
+
 function saveBuildToStorage(buildId, buildData) {
   try {
     const builds = JSON.parse(localStorage.getItem("overlord_builds") || "[]");
@@ -736,7 +743,15 @@ function showBuildFilesForContainer(build, containerId, timerId) {
     fileName.textContent = file.filename;
     const filePlatform = document.createElement("div");
     filePlatform.className = "text-sm text-gray-400";
-    filePlatform.textContent = file.platform;
+    const versionValue = formatStubVersion(file.version);
+    const platformText = document.createElement("span");
+    platformText.textContent = `${file.platform} | `;
+    const versionText = document.createElement("span");
+    versionText.className = "server-version-number";
+    versionText.textContent =
+      versionValue === "unknown (legacy build)" ? versionValue : `v${versionValue}`;
+    filePlatform.appendChild(platformText);
+    filePlatform.appendChild(versionText);
     fileText.appendChild(fileName);
     fileText.appendChild(filePlatform);
     fileMeta.appendChild(fileIcon);
