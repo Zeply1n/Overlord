@@ -215,6 +215,7 @@ fi
 "$CC" -shared -nostartfiles -o "$OUT_DIR/$DLL_NAME" $LINK_OBJS $LINK_LIBS \
   -Wl,--entry,DllMain \
   -Wl,--no-seh \
+  -Wl,--disable-runtime-pseudo-reloc \
   -fno-stack-protector \
   -s
 
