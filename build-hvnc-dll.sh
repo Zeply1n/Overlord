@@ -212,7 +212,7 @@ if [ -n "${MINHOOK_LIB:-}" ] && [ -f "${MINHOOK_LIB}" ]; then
   LINK_LIBS="$LINK_LIBS $MINHOOK_LIB"
 fi
 
-"$CC" -shared -nostartfiles -o "$OUT_DIR/$DLL_NAME" $LINK_OBJS $LINK_LIBS \
+"$CC" -shared -o "$OUT_DIR/$DLL_NAME" $LINK_OBJS $LINK_LIBS \
   -Wl,--entry,DllMain \
   -Wl,--no-seh \
   -Wl,--disable-runtime-pseudo-reloc \
