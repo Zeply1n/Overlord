@@ -691,7 +691,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		x, _ := payloadInt32(payload, "x")
 		y, _ := payloadInt32(payload, "y")
 		absX, absY := resolveDesktopPoint(env.SelectedDisplay, x, y)
-		log.Printf("desktop: mouse move %d,%d -> %d,%d", x, y, absX, absY)
 		setCursorPos(absX, absY)
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
@@ -708,7 +707,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 				setCursorPos(absX, absY)
 			}
 		}
-		log.Printf("desktop: mouse down %d", btn)
 		sendMouseDown(btn)
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
@@ -725,7 +723,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 				setCursorPos(absX, absY)
 			}
 		}
-		log.Printf("desktop: mouse up %d", btn)
 		sendMouseUp(btn)
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
@@ -1047,7 +1044,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 				y = int32(v)
 			}
 		}
-		log.Printf("hvnc: mouse down %d", btn)
 		enqueueHVNCInput(hvncInputEvent{kind: hvncInputMouseDown, display: env.HVNCSelectedDisplay, button: btn, x: x, y: y})
 		return nil
 	case "hvnc_mouse_up":
@@ -1138,7 +1134,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 				y = int32(v)
 			}
 		}
-		log.Printf("hvnc: mouse up %d", btn)
 		enqueueHVNCInput(hvncInputEvent{kind: hvncInputMouseUp, display: env.HVNCSelectedDisplay, button: btn, x: x, y: y})
 		return nil
 	case "hvnc_mouse_wheel":
