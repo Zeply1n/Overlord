@@ -46,15 +46,17 @@ type Env struct {
 	NotificationMu            sync.RWMutex
 	NotificationKeywords      []string
 	NotificationMinIntervalMs int
+	NotificationClipboard     bool
 	LastPongUnixMs            int64
 }
 
-func (e *Env) SetNotificationConfig(keywords []string, minIntervalMs int) {
+func (e *Env) SetNotificationConfig(keywords []string, minIntervalMs int, clipboardEnabled bool) {
 	e.NotificationMu.Lock()
 	e.NotificationKeywords = keywords
 	if minIntervalMs > 0 {
 		e.NotificationMinIntervalMs = minIntervalMs
 	}
+	e.NotificationClipboard = clipboardEnabled
 	e.NotificationMu.Unlock()
 }
 
@@ -73,6 +75,12 @@ func (e *Env) GetNotificationMinIntervalMs() int {
 	e.NotificationMu.RLock()
 	defer e.NotificationMu.RUnlock()
 	return e.NotificationMinIntervalMs
+}
+
+func (e *Env) GetClipboardEnabled() bool {
+	e.NotificationMu.RLock()
+	defer e.NotificationMu.RUnlock()
+	return e.NotificationClipboard
 }
 
 func (e *Env) SetLastPong(tsMillis int64) {

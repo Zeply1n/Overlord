@@ -15,6 +15,7 @@ const notificationScopeHint = document.getElementById("notification-scope-hint")
 // Keyword section
 const keywordSection = document.getElementById("keyword-section");
 const keywordInput = document.getElementById("keyword-input");
+const clipboardEnabledInput = document.getElementById("clipboard-enabled");
 const saveKeywordsBtn = document.getElementById("save-keywords");
 const keywordHint = document.getElementById("keyword-hint");
 
@@ -176,6 +177,10 @@ function wireToggle(inputEl, btnEl) {
 // ── Notification table row ────────────────────────────────────────────────────
 function renderRow(item, prepend = true) {
   if (!listEl) return;
+  const isClipboard = item.category === "clipboard";
+  const sourceBadge = isClipboard
+    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-900/60 text-violet-300 border border-violet-700/50"><i class="fa-solid fa-clipboard text-xs"></i> clipboard</span>`
+    : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-900/60 text-blue-300 border border-blue-700/50"><i class="fa-solid fa-desktop text-xs"></i> window</span>`;
   const row = document.createElement("tr");
   row.className = "border-t border-slate-800/60";
   row.innerHTML = `
@@ -185,6 +190,7 @@ function renderRow(item, prepend = true) {
     <td class="py-2 pr-4 max-w-xl truncate" title="${escapeHtml(item.title || "")}">${escapeHtml(item.title || "-")}</td>
     <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.process || "-")}</td>
     <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.keyword || "-")}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${sourceBadge}</td>
     <td class="py-2 pr-4"><div class="preview-slot"></div></td>
   `;
 
@@ -283,6 +289,9 @@ async function loadKeywords() {
     const keywords = data?.notifications?.keywords || [];
     keywordInput.value = keywords.join("\n");
     renderKeywordHint(keywords.length);
+    if (clipboardEnabledInput) {
+      clipboardEnabledInput.checked = data?.notifications?.clipboardEnabled === true;
+    }
   } catch {}
 }
 
@@ -290,11 +299,12 @@ function wireKeywordSave() {
   if (!saveKeywordsBtn || !keywordInput) return;
   saveKeywordsBtn.addEventListener("click", async () => {
     const keywords = parseKeywords(keywordInput.value);
+    const clipboardEnabled = clipboardEnabledInput ? clipboardEnabledInput.checked : false;
     try {
       const res = await fetch("/api/notifications/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keywords }),
+        body: JSON.stringify({ keywords, clipboardEnabled }),
       });
       if (!res.ok) {
         window.showToast?.("Failed to save keywords", "error", 4000);
@@ -304,6 +314,9 @@ function wireKeywordSave() {
       const updated = data?.notifications?.keywords || keywords;
       keywordInput.value = updated.join("\n");
       renderKeywordHint(updated.length);
+      if (clipboardEnabledInput && typeof data?.notifications?.clipboardEnabled === "boolean") {
+        clipboardEnabledInput.checked = data.notifications.clipboardEnabled;
+      }
       window.showToast?.("Keywords updated", "success", 3000);
     } catch {
       window.showToast?.("Failed to save keywords", "error", 4000);

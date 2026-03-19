@@ -19,7 +19,7 @@ type NotificationRecord = {
   processPath?: string;
   pid?: number;
   keyword?: string;
-  category: "active_window";
+  category: "active_window" | "clipboard";
   ts: number;
   screenshotId?: string;
 };
@@ -210,7 +210,9 @@ export function createNotificationPluginHandlers(deps: CreateDeps) {
         return;
       }
       const info = clientManager.getClient(clientId);
-      logger.info(`[notify] client=${clientId} keyword=${keyword || "-"} title=${title}`);
+      const category: "active_window" | "clipboard" =
+        payload.category === "clipboard" ? "clipboard" : "active_window";
+      logger.info(`[notify] client=${clientId} keyword=${keyword || "-"} category=${category} title=${title}`);
       const record: NotificationRecord = {
         id: uuidv4(),
         clientId,
@@ -222,7 +224,7 @@ export function createNotificationPluginHandlers(deps: CreateDeps) {
         processPath: typeof payload.processPath === "string" ? payload.processPath : "",
         pid: Number(payload.pid) || undefined,
         keyword,
-        category: "active_window",
+        category,
         ts,
       };
 

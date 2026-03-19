@@ -15,6 +15,7 @@ func HandleNotificationConfig(_ context.Context, env *runtime.Env, envelope map[
 
 	var keywords []string
 	minInterval := 0
+	clipboardEnabled := false
 
 	if raw, ok := envelope["keywords"].([]interface{}); ok {
 		for _, v := range raw {
@@ -32,8 +33,11 @@ func HandleNotificationConfig(_ context.Context, env *runtime.Env, envelope map[
 	if v, ok := envelope["minIntervalMs"].(int); ok {
 		minInterval = v
 	}
+	if v, ok := envelope["clipboardEnabled"].(bool); ok {
+		clipboardEnabled = v
+	}
 
-	env.SetNotificationConfig(keywords, minInterval)
-	log.Printf("notification_config: loaded %d keywords", len(keywords))
+	env.SetNotificationConfig(keywords, minInterval, clipboardEnabled)
+	log.Printf("notification_config: loaded %d keywords clipboard=%v", len(keywords), clipboardEnabled)
 	return nil
 }

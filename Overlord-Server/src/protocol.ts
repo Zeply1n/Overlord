@@ -35,6 +35,7 @@ export type HelloAck = {
   notification?: {
     keywords: string[];
     minIntervalMs?: number;
+    clipboardEnabled?: boolean;
   };
 };
 export type Ping = { type: "ping"; ts?: number };
@@ -271,6 +272,7 @@ export type NotificationConfig = {
   type: "notification_config";
   keywords: string[];
   minIntervalMs?: number;
+  clipboardEnabled?: boolean;
 };
 
 export type WireMessage =

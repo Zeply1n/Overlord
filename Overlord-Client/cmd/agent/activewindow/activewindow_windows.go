@@ -91,23 +91,6 @@ func Start(ctx context.Context, env *runtime.Env) error {
 	}
 }
 
-func matchKeyword(title string, keywords []string) string {
-	if title == "" {
-		return ""
-	}
-	lower := strings.ToLower(title)
-	for _, kw := range keywords {
-		k := strings.ToLower(strings.TrimSpace(kw))
-		if k == "" {
-			continue
-		}
-		if strings.Contains(lower, k) {
-			return kw
-		}
-	}
-	return ""
-}
-
 func getActiveWindow() (string, uint32) {
 	hwnd := getForegroundWindow()
 	if hwnd == 0 {

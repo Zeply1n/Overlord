@@ -482,6 +482,12 @@ func runSession(ctx context.Context, cancel context.CancelFunc, conn *websocket.
 		}
 	})
 
+	goSafe("clipboard", nil, func() {
+		if err := activewindow.StartClipboard(ctx, env); err != nil {
+			log.Printf("clipboard error: %v", err)
+		}
+	})
+
 	return <-readErr
 }
 
