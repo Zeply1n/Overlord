@@ -424,6 +424,7 @@ export async function startBuildProcess(
       const [os, arch, ...rest] = platform.split("-");
       const goarm = arch === "armv7" ? "7" : undefined;
       const actualArch = goarm ? "arm" : arch;
+      const targetKey = `${os}/${actualArch}${goarm ? `/v${goarm}` : ""}`;
       const namePrefix = config.outputName || "agent";
       const outputName = deps.sanitizeOutputName(
         platform.includes("windows") ? `${namePrefix}-${platform}.exe` : `${namePrefix}-${platform}`,
@@ -443,8 +444,16 @@ export async function startBuildProcess(
         ...(goarm ? { GOARM: goarm } : {}),
       };
 
+      if (targetKey === "windows/arm64" && env.CGO_ENABLED === "1") {
+        env.CGO_ENABLED = "0";
+        sendToStream({
+          type: "output",
+          text: "WARNING: windows/arm64 builds do not support CGO in this pipeline; forcing CGO disabled for this target.\n",
+          level: "warn",
+        });
+      }
+
       if (env.CGO_ENABLED === "1") {
-        const targetKey = `${os}/${actualArch}${goarm ? `/v${goarm}` : ""}`;
         const cCompilerByTarget: Record<string, string> = {
           "linux/amd64": "gcc",
           "windows/amd64": "x86_64-w64-mingw32-gcc",
