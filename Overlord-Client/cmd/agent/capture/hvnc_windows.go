@@ -714,6 +714,9 @@ func hvncCaptureDisplayOnThread(display int) (*image.RGBA, error) {
 	captureMu.Lock()
 	defer captureMu.Unlock()
 
+	restoreRes := BypassResolutionCap()
+	defer restoreRes()
+
 	setDPIAware()
 
 	maxDisplays := displayCount()
