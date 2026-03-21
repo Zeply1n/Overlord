@@ -109,6 +109,24 @@ if (host) {
       const user = await res.json();
       applyUserRoleUI(user, refs);
 
+      if (user.role === "admin" || user.role === "operator") {
+        try {
+          const statsRes = await fetch("/api/enrollment/stats", { credentials: "include" });
+          if (statsRes.ok) {
+            const stats = await statsRes.json();
+            const badge = refs.enrollmentBadge;
+            if (badge) {
+              if (stats.pending > 0) {
+                badge.textContent = stats.pending;
+                badge.classList.remove("hidden");
+              } else {
+                badge.classList.add("hidden");
+              }
+            }
+          }
+        } catch {}
+      }
+
       applyAdaptiveNavLayout();
     } catch (err) {
       console.error("Failed to load user:", err);
