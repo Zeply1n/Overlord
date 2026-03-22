@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -47,9 +49,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Delete the release (--cleanup-tag attempts to delete the tag too)
-          gh release delete Overlord-Desktop-v${{ env.VERSION }} --yes --cleanup-tag || true
-          # Explicitly delete the git tag ref via API in case the above didn't clean it up
+          # Find and delete any release with this tag_name, even if the git tag no longer exists.
+          # gh release delete requires the tag ref to exist, so we use the API directly instead.
+          RELEASE_ID=$(gh api /repos/${{ github.repository }}/releases \
+            --jq '.[] | select(.tag_name == "Overlord-Desktop-v${{ env.VERSION }}") | .id' \
+            2>/dev/null | head -1)
+          if [ -n "$RELEASE_ID" ]; then
+            gh api --method DELETE /repos/${{ github.repository }}/releases/$RELEASE_ID || true
+          fi
+          # Also delete the git tag ref if it somehow still exists
           gh api --method DELETE /repos/${{ github.repository }}/git/refs/tags/Overlord-Desktop-v${{ env.VERSION }} || true
         shell: bash
 
