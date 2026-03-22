@@ -49,16 +49,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Find and delete any release with this tag_name, even if the git tag no longer exists.
-          # gh release delete requires the tag ref to exist, so we use the API directly instead.
+          # Look up the release by tag_name via the list endpoint (works even if the git tag is gone)
           RELEASE_ID=$(gh api /repos/${{ github.repository }}/releases \
             --jq '.[] | select(.tag_name == "Overlord-Desktop-v${{ env.VERSION }}") | .id' \
-            2>/dev/null | head -1)
+            2>/dev/null || true)
           if [ -n "$RELEASE_ID" ]; then
             gh api --method DELETE /repos/${{ github.repository }}/releases/$RELEASE_ID || true
           fi
-          # Also delete the git tag ref if it somehow still exists
-          gh api --method DELETE /repos/${{ github.repository }}/git/refs/tags/Overlord-Desktop-v${{ env.VERSION }} || true
+          # Delete the git tag ref if it somehow still exists
+          gh api --method DELETE /repos/${{ github.repository }}/git/refs/tags/Overlord-Desktop-v${{ env.VERSION }} 2>/dev/null || true
         shell: bash
 
       - name: Create Release
