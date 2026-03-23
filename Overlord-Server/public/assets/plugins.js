@@ -134,6 +134,35 @@ function renderPlugins(plugins) {
       await refresh();
     });
 
+    const autoLoadBtn = document.createElement("button");
+    autoLoadBtn.className =
+      "inline-flex items-center gap-2 px-3 py-2 rounded-lg border" +
+      (plugin.autoLoad
+        ? " border-amber-600 text-amber-200 bg-amber-900/40"
+        : " border-slate-600 text-slate-300 bg-slate-800/60");
+    autoLoadBtn.innerHTML = plugin.autoLoad
+      ? '<i class="fa-solid fa-bolt"></i> Auto-load'
+      : '<i class="fa-solid fa-bolt-lightning"></i> Auto-load off';
+    autoLoadBtn.title = plugin.autoLoad
+      ? "Plugin will auto-load on all new client connections. Click to disable."
+      : "Click to auto-load this plugin on all new client connections.";
+    autoLoadBtn.addEventListener("click", async () => {
+      const res = await fetch(`/api/plugins/${plugin.id}/autoload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          autoLoad: !plugin.autoLoad,
+          autoStartEvents: plugin.autoStartEvents || [],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        setStatus(`Auto-load toggle failed: ${text}`, true);
+        return;
+      }
+      await refresh();
+    });
+
     const removeBtn = document.createElement("button");
     removeBtn.className =
       "inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-900/40 border border-red-700/60 hover:bg-red-800/60 text-red-100";
@@ -150,6 +179,7 @@ function renderPlugins(plugins) {
       await refresh();
     });
     actions.appendChild(toggle);
+    actions.appendChild(autoLoadBtn);
     actions.appendChild(removeBtn);
     card.appendChild(meta);
     card.appendChild(actions);

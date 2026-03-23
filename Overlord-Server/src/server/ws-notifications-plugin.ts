@@ -75,6 +75,33 @@ function safeSendViewer(ws: ServerWebSocket<SocketData>, payload: unknown) {
 }
 
 export function createNotificationPluginHandlers(deps: CreateDeps) {
+  const pluginUIEventBuffer = new Map<string, Array<{ event: string; payload: any; ts: number }>>();
+  const PLUGIN_UI_EVENT_BUFFER_MAX = 200;
+  const PLUGIN_UI_EVENT_TTL_MS = 60_000;
+
+  function bufferPluginUIEvent(clientId: string, pluginId: string, event: string, payload: any) {
+    const key = `${clientId}:${pluginId}`;
+    let list = pluginUIEventBuffer.get(key);
+    if (!list) {
+      list = [];
+      pluginUIEventBuffer.set(key, list);
+    }
+    list.push({ event, payload, ts: Date.now() });
+    if (list.length > PLUGIN_UI_EVENT_BUFFER_MAX) {
+      list.splice(0, list.length - PLUGIN_UI_EVENT_BUFFER_MAX);
+    }
+  }
+
+  function drainPluginUIEvents(clientId: string, pluginId: string): Array<{ event: string; payload: any }> {
+    const key = `${clientId}:${pluginId}`;
+    const list = pluginUIEventBuffer.get(key);
+    if (!list || list.length === 0) return [];
+    const now = Date.now();
+    const fresh = list.filter((e) => now - e.ts < PLUGIN_UI_EVENT_TTL_MS);
+    pluginUIEventBuffer.delete(key);
+    return fresh.map(({ event, payload }) => ({ event, payload }));
+  }
+
   function requestNotificationScreenshot(info: any, record: NotificationRecord) {
     if (!info || !info.ws) return;
     const commandId = `notify-shot-${uuidv4()}`;
@@ -356,6 +383,7 @@ export function createNotificationPluginHandlers(deps: CreateDeps) {
       const pluginId = (payload as any).pluginId || "";
       const event = (payload as any).event || "";
       const error = (payload as any).error || "";
+      const eventPayload = (payload as any).payload;
       logger.debug(`[plugin] client=${clientId} plugin=${pluginId} event=${event} error=${error}`);
       if (event === "loaded") {
         markPluginLoaded(clientId, pluginId);
@@ -374,6 +402,12 @@ export function createNotificationPluginHandlers(deps: CreateDeps) {
           void deps.savePluginState();
         }
       }
+      // Buffer all events for UI polling
+      if (pluginId && event) {
+        bufferPluginUIEvent(clientId, pluginId, event, eventPayload ?? (error ? { error } : null));
+      }
     },
+
+    drainPluginUIEvents,
   };
 }

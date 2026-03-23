@@ -20,6 +20,8 @@ type PluginBundle = {
 type PluginState = {
   enabled: Record<string, boolean>;
   lastError: Record<string, string>;
+  autoLoad: Record<string, boolean>;
+  autoStartEvents: Record<string, Array<{ event: string; payload: any }>>;
 };
 
 type PluginRouteDeps = {
@@ -38,6 +40,7 @@ type PluginRouteDeps = {
   isPluginLoaded: (clientId: string, pluginId: string) => boolean;
   isPluginLoading: (clientId: string, pluginId: string) => boolean;
   enqueuePluginEvent: (clientId: string, pluginId: string, event: string, payload: any) => void;
+  drainPluginUIEvents: (clientId: string, pluginId: string) => Array<{ event: string; payload: any }>;
   secureHeaders: (contentType?: string) => Record<string, string>;
   securePluginHeaders: () => Record<string, string>;
   mimeType: (path: string) => string;
@@ -65,6 +68,8 @@ export async function handlePluginRoutes(
       ...p,
       enabled: deps.pluginState.enabled[p.id] !== false,
       lastError: deps.pluginState.lastError[p.id] || "",
+      autoLoad: deps.pluginState.autoLoad[p.id] === true,
+      autoStartEvents: deps.pluginState.autoStartEvents[p.id] || [],
     }));
     return Response.json({ plugins: enriched });
   }
@@ -173,6 +178,59 @@ export async function handlePluginRoutes(
     return Response.json({ ok: true, id: pluginId, enabled });
   }
 
+  const pluginAutoLoadMatch = url.pathname.match(/^\/api\/plugins\/(.+)\/autoload$/);
+  if (req.method === "POST" && pluginAutoLoadMatch) {
+    const user = await authenticateRequest(req);
+    if (!user) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (user.role !== "admin" && user.role !== "operator") {
+      return new Response("Forbidden: Admin or operator access required", { status: 403 });
+    }
+    let pluginId = "";
+    try {
+      pluginId = deps.sanitizePluginId(pluginAutoLoadMatch[1]);
+    } catch {
+      return new Response("Invalid plugin id", { status: 400 });
+    }
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {}
+    const autoLoad = !!body.autoLoad;
+    deps.pluginState.autoLoad[pluginId] = autoLoad;
+
+    if (Array.isArray(body.autoStartEvents)) {
+      const validEvents = body.autoStartEvents.filter(
+        (e: any) => e && typeof e.event === "string" && e.event.length > 0,
+      );
+      deps.pluginState.autoStartEvents[pluginId] = validEvents;
+    }
+
+    await deps.savePluginState();
+
+    if (autoLoad) {
+      const allClients = clientManager.getAllClients();
+      for (const [cid, client] of allClients) {
+        if (deps.isPluginLoaded(cid, pluginId) || deps.isPluginLoading(cid, pluginId)) continue;
+        try {
+          const bundle = await deps.loadPluginBundle(pluginId, client.os, client.arch);
+          deps.markPluginLoading(cid, pluginId);
+          deps.sendPluginBundle(client, bundle);
+          metrics.recordCommand("plugin_load");
+        } catch {
+        }
+      }
+    }
+
+    return Response.json({
+      ok: true,
+      id: pluginId,
+      autoLoad,
+      autoStartEvents: deps.pluginState.autoStartEvents[pluginId] || [],
+    });
+  }
+
   const pluginDeleteMatch = url.pathname.match(/^\/api\/plugins\/(.+)$/);
   if (req.method === "DELETE" && pluginDeleteMatch) {
     const user = await authenticateRequest(req);
@@ -201,10 +259,30 @@ export async function handlePluginRoutes(
       await fs.rm(pluginDir, { recursive: true, force: true });
     } catch {}
 
+    // Unload from all clients that have it loaded
+    for (const [cid, loadedSet] of deps.pluginLoadedByClient) {
+      if (!loadedSet.has(pluginId)) continue;
+      const target = clientManager.getClient(cid);
+      if (target) {
+        try {
+          target.ws.send(
+            encodeMessage({
+              type: "command",
+              commandType: "plugin_unload",
+              id: uuidv4(),
+              payload: { pluginId },
+            }),
+          );
+        } catch {}
+      }
+    }
+
     deps.pluginLoadedByClient.forEach((set) => set.delete(pluginId));
     deps.pluginLoadingByClient.forEach((set) => set.delete(pluginId));
     delete deps.pluginState.enabled[pluginId];
     delete deps.pluginState.lastError[pluginId];
+    delete deps.pluginState.autoLoad[pluginId];
+    delete deps.pluginState.autoStartEvents[pluginId];
     await deps.savePluginState();
 
     return Response.json({ ok: true, id: pluginId });
@@ -239,6 +317,22 @@ export async function handlePluginRoutes(
     } catch (err) {
       return Response.json({ ok: false, error: (err as Error).message }, { status: 400 });
     }
+  }
+
+  const pluginEventsPollMatch = url.pathname.match(/^\/api\/clients\/(.+)\/plugins\/(.+)\/events$/);
+  if (req.method === "GET" && pluginEventsPollMatch) {
+    const user = await authenticateRequest(req);
+    if (!user) return new Response("Unauthorized", { status: 401 });
+    try {
+      requirePermission(user, "clients:control");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
+    const targetId = pluginEventsPollMatch[1];
+    const pluginId = pluginEventsPollMatch[2];
+    const events = deps.drainPluginUIEvents(targetId, pluginId);
+    return Response.json({ events });
   }
 
   const pluginEventMatch = url.pathname.match(/^\/api\/clients\/(.+)\/plugins\/(.+)\/event$/);
