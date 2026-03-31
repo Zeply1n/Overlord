@@ -236,7 +236,7 @@ export function stopConsoleOnTarget(target: ClientInfo | undefined, sessionId: s
 
 export function notifyConsoleClosed(clientId: string, reason: string) {
   for (const session of sessionManager.getConsoleSessionsByClient(clientId)) {
-    safeSendViewer(session.viewer, { type: "status", status: "closed", reason, sessionId });
+    safeSendViewer(session.viewer, { type: "status", status: "closed", reason, sessionId: session.id });
     sessionManager.deleteConsoleSession(session.id);
   }
 }
@@ -301,7 +301,7 @@ export function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>
     return;
   }
 
-  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false };
+  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0 };
 
   logger.debug(`[rd] inbound viewer msg type=${payload.type} client=${clientId}`);
   switch (payload.type) {
@@ -467,7 +467,7 @@ function handleRemoteDesktopFrame(payload: any) {
   const clientId = payload.clientId as string;
   const header = payload.header;
   const bytes = payload.data as Uint8Array;
-  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false };
+  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0 };
   if (!state.isStreaming) {
     rdStreamingState.set(clientId, { ...state, isStreaming: true });
   }
@@ -590,11 +590,18 @@ export function handleWebcamViewerMessage(ws: ServerWebSocket<SocketData>, raw: 
         webcamStreamingState.set(clientId, state);
       }
       break;
-    case "webcam_stop":
-      sendDesktopCommand(target, "webcam_stop", {});
-      state.isStreaming = false;
-      webcamStreamingState.set(clientId, state);
+    case "webcam_stop": {
+      const otherWebcamViewers = sessionManager.getWebcamSessionsForClient(clientId)
+        .filter(s => s.id !== ws.data.sessionId);
+      if (otherWebcamViewers.length === 0) {
+        sendDesktopCommand(target, "webcam_stop", {});
+        state.isStreaming = false;
+        webcamStreamingState.set(clientId, state);
+      } else {
+        logger.debug(`[webcam] ignoring webcam_stop for client ${clientId} - ${otherWebcamViewers.length} other viewer(s) still active`);
+      }
       break;
+    }
     default:
       break;
   }
@@ -652,14 +659,21 @@ export function handleHVNCViewerMessage(ws: ServerWebSocket<SocketData>, raw: st
         logger.debug(`[hvnc] ignoring duplicate hvnc_start for client ${clientId}`);
       }
       break;
-    case "hvnc_stop":
-      if (state.isStreaming) {
-        sendHVNCCommand(target, "hvnc_stop", {});
-        state.isStreaming = false;
-        hvncStreamingState.set(clientId, state);
-        logger.debug(`[hvnc] stopped streaming for client ${clientId}`);
+    case "hvnc_stop": {
+      const otherHvncViewers = sessionManager.getHvncSessionsForClient(clientId)
+        .filter(s => s.id !== ws.data.sessionId);
+      if (otherHvncViewers.length === 0) {
+        if (state.isStreaming) {
+          sendHVNCCommand(target, "hvnc_stop", {});
+          state.isStreaming = false;
+          hvncStreamingState.set(clientId, state);
+          logger.debug(`[hvnc] stopped streaming for client ${clientId}`);
+        }
+      } else {
+        logger.debug(`[hvnc] ignoring hvnc_stop for client ${clientId} - ${otherHvncViewers.length} other viewer(s) still active`);
       }
       break;
+    }
     case "hvnc_select_display": {
       const newDisplay = Number(payload.display) || 0;
       if (state.display !== newDisplay) {
