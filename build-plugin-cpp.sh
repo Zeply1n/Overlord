@@ -28,6 +28,32 @@ esac
 DEFAULT_TARGETS="${HOST_OS}-${HOST_ARCH}"
 BUILD_TARGETS="${BUILD_TARGETS:-${DEFAULT_TARGETS}}"
 
+# Resolve the C++ compiler for a given target os-arch pair.
+# Override with CXX=<compiler> for custom toolchains.
+resolve_cxx() {
+  local t_os="$1" t_arch="$2"
+
+  # Honour explicit CXX override
+  if [[ -n "${CXX:-}" ]]; then echo "${CXX}"; return; fi
+
+  # Native compilation
+  if [[ "${t_os}" == "${HOST_OS}" && "${t_arch}" == "${HOST_ARCH}" ]]; then
+    echo "g++"; return
+  fi
+
+  # Cross-compilation
+  case "${t_os}-${t_arch}" in
+    linux-amd64)    echo "x86_64-linux-gnu-g++" ;;
+    linux-arm64)    echo "aarch64-linux-gnu-g++" ;;
+    linux-arm)      echo "arm-linux-gnueabihf-g++" ;;
+    windows-amd64)  echo "x86_64-w64-mingw32-g++" ;;
+    windows-arm64)  echo "aarch64-w64-mingw32-g++" ;;
+    darwin-amd64)   echo "x86_64-apple-darwin-g++" ;;
+    darwin-arm64)   echo "aarch64-apple-darwin-g++" ;;
+    *)              echo "g++" ;;
+  esac
+}
+
 BUILT_FILES=()
 
 for target in ${BUILD_TARGETS}; do
@@ -42,9 +68,15 @@ for target in ${BUILD_TARGETS}; do
     ext="so"
   fi
 
+  cxx="$(resolve_cxx "${os}" "${arch}")"
+  if ! command -v "${cxx}" >/dev/null 2>&1; then
+    echo "[error] cross-compiler '${cxx}' not found for ${os}-${arch}. Install it or set CXX=<compiler>." >&2
+    exit 1
+  fi
+
   outfile="${PLUGIN_DIR}/${PLUGIN_NAME}-${os}-${arch}.${ext}"
-  echo "[build] g++ -shared -fPIC -O2 -o ${outfile} ${NATIVE_DIR}/plugin.cpp"
-  g++ -shared -fPIC -O2 -o "${outfile}" "${NATIVE_DIR}/plugin.cpp"
+  echo "[build] ${cxx} -shared -fPIC -O2 -o ${outfile} ${NATIVE_DIR}/plugin.cpp"
+  ${cxx} -shared -fPIC -O2 -o "${outfile}" "${NATIVE_DIR}/plugin.cpp"
   BUILT_FILES+=("${PLUGIN_NAME}-${os}-${arch}.${ext}")
 done
 

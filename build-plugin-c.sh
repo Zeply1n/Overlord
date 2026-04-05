@@ -28,6 +28,32 @@ esac
 DEFAULT_TARGETS="${HOST_OS}-${HOST_ARCH}"
 BUILD_TARGETS="${BUILD_TARGETS:-${DEFAULT_TARGETS}}"
 
+# Resolve the C compiler for a given target os-arch pair.
+# Override with CC=<compiler> for custom toolchains.
+resolve_cc() {
+  local t_os="$1" t_arch="$2"
+
+  # Honour explicit CC override
+  if [[ -n "${CC:-}" ]]; then echo "${CC}"; return; fi
+
+  # Native compilation
+  if [[ "${t_os}" == "${HOST_OS}" && "${t_arch}" == "${HOST_ARCH}" ]]; then
+    echo "gcc"; return
+  fi
+
+  # Cross-compilation
+  case "${t_os}-${t_arch}" in
+    linux-amd64)    echo "x86_64-linux-gnu-gcc" ;;
+    linux-arm64)    echo "aarch64-linux-gnu-gcc" ;;
+    linux-arm)      echo "arm-linux-gnueabihf-gcc" ;;
+    windows-amd64)  echo "x86_64-w64-mingw32-gcc" ;;
+    windows-arm64)  echo "aarch64-w64-mingw32-gcc" ;;
+    darwin-amd64)   echo "x86_64-apple-darwin-gcc" ;;
+    darwin-arm64)   echo "aarch64-apple-darwin-gcc" ;;
+    *)              echo "gcc" ;;
+  esac
+}
+
 BUILT_FILES=()
 
 for target in ${BUILD_TARGETS}; do
@@ -42,9 +68,15 @@ for target in ${BUILD_TARGETS}; do
     ext="so"
   fi
 
+  cc="$(resolve_cc "${os}" "${arch}")"
+  if ! command -v "${cc}" >/dev/null 2>&1; then
+    echo "[error] cross-compiler '${cc}' not found for ${os}-${arch}. Install it or set CC=<compiler>." >&2
+    exit 1
+  fi
+
   outfile="${PLUGIN_DIR}/${PLUGIN_NAME}-${os}-${arch}.${ext}"
-  echo "[build] gcc -shared -fPIC -O2 -o ${outfile} ${NATIVE_DIR}/plugin.c"
-  gcc -shared -fPIC -O2 -o "${outfile}" "${NATIVE_DIR}/plugin.c"
+  echo "[build] ${cc} -shared -fPIC -O2 -o ${outfile} ${NATIVE_DIR}/plugin.c"
+  ${cc} -shared -fPIC -O2 -o "${outfile}" "${NATIVE_DIR}/plugin.c"
   BUILT_FILES+=("${PLUGIN_NAME}-${os}-${arch}.${ext}")
 done
 

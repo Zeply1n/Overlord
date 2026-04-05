@@ -17,6 +17,10 @@ if not exist "%NATIVE_DIR%\plugin.c" (
 REM Build targets - default to windows-amd64 on Windows
 if not defined BUILD_TARGETS set "BUILD_TARGETS=windows-amd64"
 
+REM Detect host architecture
+set "HOST_ARCH=amd64"
+if "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "HOST_ARCH=arm64"
+
 set "BUILT_FILES="
 for %%T in (%BUILD_TARGETS%) do (
   for /f "tokens=1,2 delims=-" %%A in ("%%T") do (
@@ -34,19 +38,36 @@ for %%T in (%BUILD_TARGETS%) do (
   set "OUTFILE=%PLUGIN_DIR%\%PLUGIN_NAME%-!TARGET_OS!-!TARGET_ARCH!.!EXT!"
 
   if "!TARGET_OS!"=="windows" (
-    echo [build] cl /LD /O2 "%NATIVE_DIR%\plugin.c" /Fe:"!OUTFILE!"
-    cl /LD /O2 "%NATIVE_DIR%\plugin.c" /Fe:"!OUTFILE!" >nul 2>&1
+    REM Pick cross-compiler flags for MSVC or gcc
+    set "CL_MACHINE="
+    set "GCC_CMD=gcc"
+    if "!TARGET_ARCH!"=="arm64" (
+      set "CL_MACHINE=/machine:ARM64"
+      set "GCC_CMD=aarch64-w64-mingw32-gcc"
+    ) else if "!TARGET_ARCH!"=="amd64" (
+      set "CL_MACHINE=/machine:X64"
+      set "GCC_CMD=x86_64-w64-mingw32-gcc"
+    )
+
+    echo [build] cl /LD /O2 "%NATIVE_DIR%\plugin.c" /Fe:"!OUTFILE!" /link !CL_MACHINE!
+    cl /LD /O2 "%NATIVE_DIR%\plugin.c" /Fe:"!OUTFILE!" /link !CL_MACHINE! >nul 2>&1
     if errorlevel 1 (
-      echo [build] cl failed, trying gcc...
-      gcc -shared -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
+      echo [build] cl failed, trying !GCC_CMD!...
+      !GCC_CMD! -shared -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
       if errorlevel 1 (
         echo [error] build failed for !TARGET_OS!-!TARGET_ARCH!
         exit /b 1
       )
     )
   ) else (
-    echo [build] gcc -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
-    gcc -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
+    REM Cross-compile for non-Windows targets
+    set "GCC_CMD=gcc"
+    if "!TARGET_OS!"=="linux" (
+      if "!TARGET_ARCH!"=="arm64" set "GCC_CMD=aarch64-linux-gnu-gcc"
+      if "!TARGET_ARCH!"=="amd64" set "GCC_CMD=x86_64-linux-gnu-gcc"
+    )
+    echo [build] !GCC_CMD! -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
+    !GCC_CMD! -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.c"
     if errorlevel 1 (
       echo [error] build failed for !TARGET_OS!-!TARGET_ARCH!
       exit /b 1

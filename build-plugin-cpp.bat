@@ -17,6 +17,10 @@ if not exist "%NATIVE_DIR%\plugin.cpp" (
 REM Build targets - default to windows-amd64 on Windows
 if not defined BUILD_TARGETS set "BUILD_TARGETS=windows-amd64"
 
+REM Detect host architecture
+set "HOST_ARCH=amd64"
+if "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "HOST_ARCH=arm64"
+
 set "BUILT_FILES="
 for %%T in (%BUILD_TARGETS%) do (
   for /f "tokens=1,2 delims=-" %%A in ("%%T") do (
@@ -34,19 +38,36 @@ for %%T in (%BUILD_TARGETS%) do (
   set "OUTFILE=%PLUGIN_DIR%\%PLUGIN_NAME%-!TARGET_OS!-!TARGET_ARCH!.!EXT!"
 
   if "!TARGET_OS!"=="windows" (
-    echo [build] cl /LD /EHsc /O2 "%NATIVE_DIR%\plugin.cpp" /Fe:"!OUTFILE!"
-    cl /LD /EHsc /O2 "%NATIVE_DIR%\plugin.cpp" /Fe:"!OUTFILE!" >nul 2>&1
+    REM Pick cross-compiler flags for MSVC or g++
+    set "CL_MACHINE="
+    set "GXX_CMD=g++"
+    if "!TARGET_ARCH!"=="arm64" (
+      set "CL_MACHINE=/machine:ARM64"
+      set "GXX_CMD=aarch64-w64-mingw32-g++"
+    ) else if "!TARGET_ARCH!"=="amd64" (
+      set "CL_MACHINE=/machine:X64"
+      set "GXX_CMD=x86_64-w64-mingw32-g++"
+    )
+
+    echo [build] cl /LD /EHsc /O2 "%NATIVE_DIR%\plugin.cpp" /Fe:"!OUTFILE!" /link !CL_MACHINE!
+    cl /LD /EHsc /O2 "%NATIVE_DIR%\plugin.cpp" /Fe:"!OUTFILE!" /link !CL_MACHINE! >nul 2>&1
     if errorlevel 1 (
-      echo [build] cl failed, trying g++...
-      g++ -shared -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
+      echo [build] cl failed, trying !GXX_CMD!...
+      !GXX_CMD! -shared -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
       if errorlevel 1 (
         echo [error] build failed for !TARGET_OS!-!TARGET_ARCH!
         exit /b 1
       )
     )
   ) else (
-    echo [build] g++ -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
-    g++ -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
+    REM Cross-compile for non-Windows targets
+    set "GXX_CMD=g++"
+    if "!TARGET_OS!"=="linux" (
+      if "!TARGET_ARCH!"=="arm64" set "GXX_CMD=aarch64-linux-gnu-g++"
+      if "!TARGET_ARCH!"=="amd64" set "GXX_CMD=x86_64-linux-gnu-g++"
+    )
+    echo [build] !GXX_CMD! -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
+    !GXX_CMD! -shared -fPIC -O2 -o "!OUTFILE!" "%NATIVE_DIR%\plugin.cpp"
     if errorlevel 1 (
       echo [error] build failed for !TARGET_OS!-!TARGET_ARCH!
       exit /b 1
