@@ -38,7 +38,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, envelope map[string]interface
 	case "pong":
 		return HandlePong(ctx, d.Env, envelope)
 	case "command":
-		log.Printf("dispatcher: handling command type=%s", envelope["commandType"])
+		cmdType, _ := envelope["commandType"].(string)
+		switch cmdType {
+		case "desktop_mouse_move", "desktop_mouse_down", "desktop_mouse_up",
+			"desktop_key_down", "desktop_key_up", "desktop_text",
+			"hvnc_mouse_move", "hvnc_mouse_down", "hvnc_mouse_up",
+			"hvnc_mouse_wheel", "hvnc_key_down", "hvnc_key_up":
+		default:
+			log.Printf("dispatcher: handling command type=%s", cmdType)
+		}
 		return HandleCommand(ctx, d.Env, envelope)
 	case "plugin_event":
 		return HandlePluginEvent(ctx, d.Env, envelope)

@@ -813,7 +813,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			}
 		}
 		if vk := keyCodeToVK(code); vk != 0 {
-			log.Printf("desktop: key down code=%s vk=%d", code, vk)
 			sendKeyDown(vk)
 		}
 		sendCommandResultAsync(env, cmdID)
@@ -831,7 +830,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			}
 		}
 		if vk := keyCodeToVK(code); vk != 0 {
-			log.Printf("desktop: key up code=%s vk=%d", code, vk)
 			sendKeyUp(vk)
 		}
 		sendCommandResultAsync(env, cmdID)
@@ -849,7 +847,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			}
 		}
 		if text != "" {
-			log.Printf("desktop: text input len=%d", len(text))
 			sendTextInput(text)
 		}
 		sendCommandResultAsync(env, cmdID)
@@ -1320,7 +1317,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			}
 		}
 		if vk := keyCodeToVKHVNC(code); vk != 0 {
-			log.Printf("hvnc: key down code=%s vk=%d", code, vk)
 			enqueueHVNCInput(hvncInputEvent{kind: hvncInputKeyDown, vk: vk})
 		}
 		return nil
@@ -1337,7 +1333,6 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			}
 		}
 		if vk := keyCodeToVKHVNC(code); vk != 0 {
-			log.Printf("hvnc: key up code=%s vk=%d", code, vk)
 			enqueueHVNCInput(hvncInputEvent{kind: hvncInputKeyUp, vk: vk})
 		}
 		return nil
