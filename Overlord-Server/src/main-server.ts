@@ -3,7 +3,8 @@ import { decodeMessage, encodeMessage, type WireMessage, type PluginManifest } f
 import { logger } from "./logger";
 import { fileURLToPath } from "url";
 import path from "path";
-import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, getBuild, getBuildByTag, getAllBuilds, deleteExpiredBuilds, deleteBuild, getNotificationScreenshot, clearNotificationScreenshots, deleteClientRow, getClientIp, banIp, isIpBanned, clientExists } from "./db";
+import fs from "fs/promises";
+import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, getBuild, getBuildByTag, getAllBuilds, deleteExpiredBuilds, deleteBuild, getNotificationScreenshot, clearNotificationScreenshots, deleteClientRow, getClientIp, banIp, isIpBanned, clientExists, deleteExpiredSharedFiles } from "./db";
 import { handleFrame, handleHello, handlePing, handlePong } from "./wsHandlers";
 import { getMessageByteLength, getMaxPayloadLimit, isAllowedClientMessageType } from "./wsValidation";
 import { ClientInfo, ClientRole } from "./types";
@@ -29,6 +30,7 @@ import { handleMiscRoutes } from "./server/routes/misc-routes";
 import { handleNotificationsConfigRoutes } from "./server/routes/notifications-config-routes";
 import { handlePageRoutes } from "./server/routes/page-routes";
 import { handlePluginRoutes } from "./server/routes/plugin-routes";
+import { handleFileShareRoutes } from "./server/routes/file-share-routes";
 import { handleUsersRoutes } from "./server/routes/users-routes";
 import { handleWebSocketClose, handleWebSocketMessage, handleWebSocketOpen } from "./server/routes/websocket-lifecycle-routes";
 import { handleWsUpgradeRoutes } from "./server/routes/ws-upgrade-routes";
@@ -146,6 +148,7 @@ const PLUGIN_STATE_PATH = path.join(PLUGIN_ROOT, ".plugin-state.json");
 const DATA_DIR = ensureDataDir();
 const DEPLOY_ROOT = path.join(DATA_DIR, "deploy");
 const WINRE_ROOT = path.join(DATA_DIR, "winre");
+const FILE_SHARE_ROOT = path.join(DATA_DIR, "file-share");
 
 const TLS_CERT_PATH = config.tls.certPath;
 const TLS_KEY_PATH = config.tls.keyPath;
@@ -395,6 +398,9 @@ async function startServer() {
       securePluginHeaders,
       mimeType,
     },
+    fileShare: {
+      FILE_SHARE_ROOT,
+    },
     misc: {
       CORS_HEADERS,
       SERVER_VERSION,
@@ -562,6 +568,7 @@ async function startServer() {
       handleWinRERoutes,
       handleFileDownloadRoutes,
       handlePluginRoutes,
+      handleFileShareRoutes,
       handleMiscRoutes,
       handleAssetsRoutes,
       handlePageRoutes,
@@ -586,6 +593,12 @@ async function startServer() {
   
   deleteExpiredBuilds();
   logger.info(`[db] Cleaned up expired builds`);
+
+  const expiredPaths = deleteExpiredSharedFiles();
+  for (const p of expiredPaths) {
+    try { const dir = path.dirname(p); await fs.rm(dir, { recursive: true, force: true }); } catch {}
+  }
+  if (expiredPaths.length) logger.info(`[db] Cleaned up ${expiredPaths.length} expired shared files`);
 
   startMaintenanceLoops({
     getClients: clientManager.getAllClients,

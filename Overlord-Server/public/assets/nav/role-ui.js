@@ -10,6 +10,7 @@ export function applyUserRoleUI(user, refs) {
     logsLink,
     notificationsLink,
     enrollmentLink,
+    fileShareLink,
   } = refs;
 
   if (!user || !usernameDisplay || !roleBadge) return;
@@ -77,5 +78,6 @@ export function applyUserRoleUI(user, refs) {
   }
   if (user.role !== "viewer") {
     scriptsLink?.classList.remove("hidden");
+    fileShareLink?.classList.remove("hidden");
   }
 }

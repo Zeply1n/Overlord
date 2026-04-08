@@ -27,6 +27,7 @@ type HttpDispatchDeps<
   TWinRE,
   TFileDownload,
   TPlugin,
+  TFileShare,
   TMisc,
   TAssets,
   TPage,
@@ -47,6 +48,7 @@ type HttpDispatchDeps<
   handleWinRERoutes: RouteHandlerWithServerDeps<TServer, TWinRE>;
   handleFileDownloadRoutes: RouteHandlerWithServerDeps<TServer, TFileDownload>;
   handlePluginRoutes: RouteHandlerWithDeps<TPlugin>;
+  handleFileShareRoutes: RouteHandlerWithDeps<TFileShare>;
   handleMiscRoutes: RouteHandlerWithDeps<TMisc>;
   handleAssetsRoutes: RouteHandlerWithDeps<TAssets>;
   handlePageRoutes: RouteHandlerWithDeps<TPage>;
@@ -60,6 +62,7 @@ type HttpDispatchDeps<
     winre: TWinRE;
     fileDownload: TFileDownload;
     plugin: TPlugin;
+    fileShare: TFileShare;
     misc: TMisc;
     assets: TAssets;
     page: TPage;
@@ -77,6 +80,7 @@ export function createHttpFetchHandler<
   TWinRE,
   TFileDownload,
   TPlugin,
+  TFileShare,
   TMisc,
   TAssets,
   TPage,
@@ -92,6 +96,7 @@ export function createHttpFetchHandler<
     TWinRE,
     TFileDownload,
     TPlugin,
+    TFileShare,
     TMisc,
     TAssets,
     TPage,
@@ -143,6 +148,9 @@ export function createHttpFetchHandler<
 
       const pluginResponse = await deps.handlePluginRoutes(req, url, deps.routeDeps.plugin);
       if (pluginResponse) return pluginResponse;
+
+      const fileShareResponse = await deps.handleFileShareRoutes(req, url, deps.routeDeps.fileShare);
+      if (fileShareResponse) return fileShareResponse;
 
       const miscResponse = await deps.handleMiscRoutes(req, url, deps.routeDeps.misc);
       if (miscResponse) return miscResponse;

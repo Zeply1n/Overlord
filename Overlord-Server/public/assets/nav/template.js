@@ -40,6 +40,9 @@ function mountTopbar(host) {
           <a href="/socks5-manager" id="socks5-link"
             class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 hover:bg-slate-800 text-slate-300 transition-colors"
             ><i class="fa-solid fa-network-wired text-sky-400"></i> Proxies</a>
+          <a href="/file-share" id="file-share-link"
+            class="hidden inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 hover:bg-slate-800 text-slate-300 transition-colors"
+            ><i class="fa-solid fa-share-nodes text-rose-400"></i> File Share</a>
           <a href="/plugins" id="plugins-link"
             class="hidden inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 hover:bg-slate-800 text-slate-300 transition-colors"
             ><i class="fa-solid fa-puzzle-piece text-violet-400"></i> Plugins</a>
@@ -104,6 +107,7 @@ function mountTopbar(host) {
     notificationsLink: document.getElementById("notifications-link"),
     enrollmentLink: document.getElementById("enrollment-link"),
     enrollmentBadge: document.getElementById("enrollment-badge"),
+    fileShareLink: document.getElementById("file-share-link"),
   };
 }
 
@@ -140,6 +144,10 @@ function mountSidebar(host) {
       <a href="/socks5-manager" id="socks5-link" class="sb-link" title="Proxies">
         <i class="fa-solid fa-network-wired text-sky-400 sb-icon"></i>
         <span class="sb-text">Proxies</span>
+      </a>
+      <a href="/file-share" id="file-share-link" class="sb-link hidden" title="File Share">
+        <i class="fa-solid fa-share-nodes text-rose-400 sb-icon"></i>
+        <span class="sb-text">File Share</span>
       </a>
       <a href="/plugins" id="plugins-link" class="sb-link hidden" title="Plugins">
         <i class="fa-solid fa-puzzle-piece text-violet-400 sb-icon"></i>
@@ -235,6 +243,7 @@ function mountSidebar(host) {
     notificationsLink: document.getElementById("notifications-link"),
     enrollmentLink: document.getElementById("enrollment-link"),
     enrollmentBadge: document.getElementById("enrollment-badge"),
+    fileShareLink: document.getElementById("file-share-link"),
   };
 }
 
