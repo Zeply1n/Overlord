@@ -897,7 +897,7 @@ export function listClients(filters: ListFilters): ListResult {
 
   const rows = db
     .query<any>(
-      `SELECT id, hwid, role, host, os, arch, version, user, nickname, custom_tag as customTag, custom_tag_note as customTagNote, monitors, country, last_seen as lastSeen, online, ping_ms as pingMs, bookmarked, build_tag as buildTag, built_by_user_id as builtByUserId, enrollment_status as enrollmentStatus, public_key as publicKey, key_fingerprint as keyFingerprint, cpu, gpu, ram, is_admin as isAdmin, elevation, permissions, disconnect_reason as disconnectReason, disconnect_detail as disconnectDetail
+      `SELECT id, hwid, role, ip, host, os, arch, version, user, nickname, custom_tag as customTag, custom_tag_note as customTagNote, monitors, country, last_seen as lastSeen, online, ping_ms as pingMs, bookmarked, build_tag as buildTag, built_by_user_id as builtByUserId, enrollment_status as enrollmentStatus, public_key as publicKey, key_fingerprint as keyFingerprint, cpu, gpu, ram, is_admin as isAdmin, elevation, permissions, disconnect_reason as disconnectReason, disconnect_detail as disconnectDetail
        FROM clients
        ${whereSql}
        ${orderBy}
@@ -909,6 +909,7 @@ export function listClients(filters: ListFilters): ListResult {
     id: c.id,
     hwid: c.hwid,
     role: (c.role as ClientRole) || "client",
+    ip: c.ip || null,
     lastSeen: Number(c.lastSeen) || 0,
     host: c.host,
     os: c.os || "unknown",

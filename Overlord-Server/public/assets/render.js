@@ -62,6 +62,19 @@ export function createRenderer({
         return;
       }
 
+      const copyBtn = e.target.closest(".copy-id-btn");
+      if (copyBtn) {
+        e.stopPropagation();
+        const fullId = copyBtn.dataset.copy;
+        if (fullId) {
+          navigator.clipboard.writeText(fullId).then(() => {
+            const icon = copyBtn.querySelector(".copy-id-icon");
+            if (icon) { icon.className = "fa-solid fa-check copy-id-icon"; setTimeout(() => { icon.className = "fa-regular fa-copy copy-id-icon"; }, 1200); }
+          }).catch(() => {});
+        }
+        return;
+      }
+
       if (e.target.closest(".command-btn")) {
         e.stopPropagation();
         const rect = e.target.closest(".command-btn").getBoundingClientRect();
@@ -461,8 +474,9 @@ export function createRenderer({
             </div>
           </div>` : ""}
           <div class="flex items-center gap-2 flex-wrap text-xs text-slate-400 font-mono">
-            <span class="pill pill-ghost">ID ${deviceId}</span>
+            <span class="pill pill-ghost copy-id-btn cursor-pointer hover:bg-slate-700 transition-colors" data-copy="${escapeHtml(client.id)}" title="Copy full ID">ID ${deviceId} <i class="fa-regular fa-copy copy-id-icon"></i></span>
             ${client.hwid ? `<span class="pill pill-ghost">HW ${hwid}</span>` : ""}
+            ${client.ip ? `<span class="pill pill-ghost"><i class="fa-solid fa-network-wired"></i> ${escapeHtml(client.ip)}</span>` : ""}
           </div>
         </div>
         <div class="flex items-center gap-3">
