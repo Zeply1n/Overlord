@@ -42,7 +42,7 @@ function getDefaultServerUrlPlaceholder(isRawList) {
   if (isRawList) {
     return `${isHttps ? "https" : "http"}://${host}/list.txt`;
   }
-  return `${isHttps ? "wss" : "ws"}://${host}`;
+  return host;
 }
 
 function updateServerUrlPlaceholder() {
@@ -1124,90 +1124,209 @@ async function startBuild(config) {
   }
 }
 
-async function streamBuildOutput(buildId, config = {}) {
-  const res = await fetch(`/api/build/${buildId}/stream`, {
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to connect to build stream");
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
+async function checkBuildInfo(buildId) {
   try {
-    while (true) {
-      const { done, value } = await reader.read();
+    const res = await fetch(`/api/build/${buildId}/info`, { credentials: "include" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
-      if (done) break;
+async function streamBuildOutput(buildId, config = {}) {
+  const MAX_RECONNECT_ATTEMPTS = 10;
+  const RECONNECT_DELAY_MS = 2000;
+  let attempts = 0;
+  let completed = false;
 
-      buffer += decoder.decode(value, { stream: true });
+  while (!completed && attempts <= MAX_RECONNECT_ATTEMPTS) {
+    if (attempts > 0) {
+      addBuildOutput(`\nReconnecting to build stream (attempt ${attempts}/${MAX_RECONNECT_ATTEMPTS})...\n`, "warn");
+      buildStatusText.textContent = "Reconnecting to build stream...";
+      await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS));
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
+      const info = await checkBuildInfo(buildId);
+      if (info && (info.status === "completed" || info.status === "success")) {
+        buildStatusText.textContent = "Build completed successfully!";
+        buildStatus.querySelector("div").className =
+          "flex items-center gap-2 p-3 rounded-lg bg-green-900/40 border border-green-700/60";
+        buildStatus.querySelector("i").className = "fa-solid fa-circle-check";
+        addBuildOutput("\nBuild completed while reconnecting.\n", "success");
 
-      for (const line of lines) {
-        if (!line.trim()) continue;
+        if (info.files && info.files.length > 0) {
+          const buildData = {
+            id: info.id || buildId,
+            status: "success",
+            startTime: info.startTime || Date.now(),
+            expiresAt: info.expiresAt,
+            files: info.files,
+          };
+          saveBuildToStorage(buildData.id, buildData);
+          buildResults.classList.remove("hidden");
+          displayBuild(buildData);
 
-        if (line.startsWith("data: ")) {
-          const data = JSON.parse(line.substring(6));
-
-          if (data.type === "output") {
-            addBuildOutput(data.text, data.level || "info");
-          } else if (data.type === "status") {
-            buildStatusText.textContent = data.text;
-          } else if (data.type === "complete") {
-            buildStatusText.textContent = data.success
-              ? "Build completed successfully!"
-              : "Build failed";
-            buildStatus.querySelector("div").className = data.success
-              ? "flex items-center gap-2 p-3 rounded-lg bg-green-900/40 border border-green-700/60"
-              : "flex items-center gap-2 p-3 rounded-lg bg-red-900/40 border border-red-700/60";
-            buildStatus.querySelector("i").className = data.success
-              ? "fa-solid fa-circle-check"
-              : "fa-solid fa-circle-xmark";
-
-            if (!data.success && !config.disableCgo) {
-              addBuildOutput(
-                "Hint: This build used CGO. If it keeps failing, try enabling the 'Disable CGO' option and build again.\n",
-                "warn",
-              );
-            }
-
-            if (data.success && data.files) {
-              const buildData = {
-                id: data.buildId,
-                status: "success",
-                startTime: Date.now(),
-                expiresAt: data.expiresAt,
-                files: data.files,
-              };
-              saveBuildToStorage(data.buildId, buildData);
-
-              buildResults.classList.remove("hidden");
-              displayBuild(buildData);
-
-              // Auto-push update if "Build & Update All" was used
-              if (pendingUpdateAll) {
-                pendingUpdateAll = false;
-                await pushUpdateToAllClients(data.buildId, pendingUpdateHideWindow);
-              }
-            }
-
-            reader.cancel();
-            return;
-          } else if (data.type === "error") {
-            addBuildOutput(`\nERROR: ${data.error}\n`, "error");
+          if (pendingUpdateAll) {
+            pendingUpdateAll = false;
+            await pushUpdateToAllClients(buildData.id, pendingUpdateHideWindow);
           }
         }
+        return;
+      } else if (info && info.status === "failed") {
+        buildStatusText.textContent = "Build failed";
+        buildStatus.querySelector("div").className =
+          "flex items-center gap-2 p-3 rounded-lg bg-red-900/40 border border-red-700/60";
+        buildStatus.querySelector("i").className = "fa-solid fa-circle-xmark";
+        addBuildOutput("\nBuild failed while reconnecting.\n", "error");
+        return;
       }
-
-      buildOutputContainer.scrollTop = buildOutputContainer.scrollHeight;
+      // status is still "running", reconnect to stream
     }
-  } finally {
-    reader.releaseLock();
+
+    let res;
+    try {
+      res = await fetch(`/api/build/${buildId}/stream`, { credentials: "include" });
+    } catch (err) {
+      attempts++;
+      continue;
+    }
+
+    if (!res.ok) {
+      if (attempts > 0) {
+        const info = await checkBuildInfo(buildId);
+        if (info && (info.status === "completed" || info.status === "success")) {
+          buildStatusText.textContent = "Build completed successfully!";
+          buildStatus.querySelector("div").className =
+            "flex items-center gap-2 p-3 rounded-lg bg-green-900/40 border border-green-700/60";
+          buildStatus.querySelector("i").className = "fa-solid fa-circle-check";
+          if (info.files && info.files.length > 0) {
+            const buildData = {
+              id: info.id || buildId,
+              status: "success",
+              startTime: info.startTime || Date.now(),
+              expiresAt: info.expiresAt,
+              files: info.files,
+            };
+            saveBuildToStorage(buildData.id, buildData);
+            buildResults.classList.remove("hidden");
+            displayBuild(buildData);
+          }
+          return;
+        }
+      }
+      throw new Error("Failed to connect to build stream");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.substring(6));
+
+            if (data.type === "output") {
+              addBuildOutput(data.text, data.level || "info");
+            } else if (data.type === "status") {
+              buildStatusText.textContent = data.text;
+            } else if (data.type === "complete") {
+              buildStatusText.textContent = data.success
+                ? "Build completed successfully!"
+                : "Build failed";
+              buildStatus.querySelector("div").className = data.success
+                ? "flex items-center gap-2 p-3 rounded-lg bg-green-900/40 border border-green-700/60"
+                : "flex items-center gap-2 p-3 rounded-lg bg-red-900/40 border border-red-700/60";
+              buildStatus.querySelector("i").className = data.success
+                ? "fa-solid fa-circle-check"
+                : "fa-solid fa-circle-xmark";
+
+              if (!data.success && !config.disableCgo) {
+                addBuildOutput(
+                  "Hint: This build used CGO. If it keeps failing, try enabling the 'Disable CGO' option and build again.\n",
+                  "warn",
+                );
+              }
+
+              if (data.success && data.files) {
+                const buildData = {
+                  id: data.buildId,
+                  status: "success",
+                  startTime: Date.now(),
+                  expiresAt: data.expiresAt,
+                  files: data.files,
+                };
+                saveBuildToStorage(data.buildId, buildData);
+
+                buildResults.classList.remove("hidden");
+                displayBuild(buildData);
+
+                // Auto-push update if "Build & Update All" was used
+                if (pendingUpdateAll) {
+                  pendingUpdateAll = false;
+                  await pushUpdateToAllClients(data.buildId, pendingUpdateHideWindow);
+                }
+              }
+
+              reader.cancel();
+              completed = true;
+              return;
+            } else if (data.type === "error") {
+              addBuildOutput(`\nERROR: ${data.error}\n`, "error");
+            }
+          }
+        }
+
+        buildOutputContainer.scrollTop = buildOutputContainer.scrollHeight;
+      }
+      // Stream ended cleanly without a "complete" event — build may still be running
+      completed = true;
+    } catch (streamErr) {
+      // Network error — try to reconnect
+      try { reader.releaseLock(); } catch {}
+      attempts++;
+      continue;
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+
+  if (!completed && attempts > MAX_RECONNECT_ATTEMPTS) {
+    const info = await checkBuildInfo(buildId);
+    if (info && (info.status === "completed" || info.status === "success")) {
+      buildStatusText.textContent = "Build completed successfully!";
+      buildStatus.querySelector("div").className =
+        "flex items-center gap-2 p-3 rounded-lg bg-green-900/40 border border-green-700/60";
+      buildStatus.querySelector("i").className = "fa-solid fa-circle-check";
+      addBuildOutput("\nBuild completed (recovered after stream loss).\n", "success");
+      if (info.files && info.files.length > 0) {
+        const buildData = {
+          id: info.id || buildId,
+          status: "success",
+          startTime: info.startTime || Date.now(),
+          expiresAt: info.expiresAt,
+          files: info.files,
+        };
+        saveBuildToStorage(buildData.id, buildData);
+        buildResults.classList.remove("hidden");
+        displayBuild(buildData);
+      }
+    } else {
+      addBuildOutput("\nLost connection to build stream. The build may still be running on the server.\n", "warn");
+      addBuildOutput("Refresh the page to check build results.\n", "warn");
+    }
   }
 }
 

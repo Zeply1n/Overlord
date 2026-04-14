@@ -16,16 +16,22 @@ import { logAudit, AuditAction } from "../../auditLog";
 import * as clientManager from "../../clientManager";
 import { setOnlineState } from "../../db";
 import { requirePermission } from "../../rbac";
-import { getUserClientAccessScope, setUserClientAccessScope, setUserClientAccessRule } from "../../users";
+import { getUserById, getUserClientAccessScope, setUserClientAccessScope, setUserClientAccessRule } from "../../users";
 
-function grantClientAccess(userId: number, role: string, clientId: string): void {
-  if (role === "admin") return;
-  const currentScope = getUserClientAccessScope(userId);
+
+function grantBuildOwnerAccess(clientId: string): void {
+  const ownership = getClientBuildOwnership(clientId);
+  if (!ownership || ownership.builtByUserId == null) return;
+
+  const owner = getUserById(ownership.builtByUserId);
+  if (!owner || owner.role === "admin") return;
+
+  const currentScope = getUserClientAccessScope(ownership.builtByUserId);
   if (currentScope === "none") {
-    setUserClientAccessScope(userId, "allowlist");
+    setUserClientAccessScope(ownership.builtByUserId, "allowlist");
   }
   if (currentScope === "none" || currentScope === "allowlist") {
-    setUserClientAccessRule(userId, clientId, "allow");
+    setUserClientAccessRule(ownership.builtByUserId, clientId, "allow");
   }
 }
 
@@ -130,7 +136,7 @@ export async function handleEnrollmentRoutes(
 
     setClientEnrollmentStatus(clientId, "approved", user.username);
 
-    grantClientAccess(user.userId, user.role, clientId);
+    grantBuildOwnerAccess(clientId);
 
     _postApproveHook?.(clientId);
 
@@ -275,7 +281,7 @@ export async function handleEnrollmentRoutes(
       if (ok) {
         updated++;
         if (action === "approve") {
-          grantClientAccess(user.userId, user.role, id);
+          grantBuildOwnerAccess(id);
           _postApproveHook?.(id);
         }
       }
