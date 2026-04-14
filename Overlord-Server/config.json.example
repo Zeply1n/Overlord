@@ -35,5 +35,8 @@
   },
   "enrollment": {
     "requireApproval": true
+  },
+  "plugins": {
+    "trustedKeys": []
   }
 }

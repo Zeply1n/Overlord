@@ -309,6 +309,89 @@ async function loadCurrentUser() {
   }
 }
 
+function showPluginConfirmModal(pluginId, clientId, sigInfo) {
+  document.getElementById("plugin-confirm-modal")?.remove();
+
+  const isSigned = sigInfo && sigInfo.signed && sigInfo.valid;
+  const statusText = isSigned
+    ? `This plugin is signed but the signer's key is not trusted.`
+    : `This plugin is not signed and its origin cannot be verified.`;
+  const fpText = sigInfo?.fingerprint
+    ? `Signer fingerprint: ${sigInfo.fingerprint}`
+    : "No signature present";
+
+  const modal = document.createElement("div");
+  modal.id = "plugin-confirm-modal";
+  modal.className = "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm";
+  modal.innerHTML = `
+    <div class="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center ${isSigned ? 'bg-yellow-900/60 text-yellow-400' : 'bg-orange-900/60 text-orange-400'}">
+          <i class="fa-solid ${isSigned ? 'fa-shield' : 'fa-shield-halved'} text-lg"></i>
+        </div>
+        <div>
+          <h3 class="font-semibold text-lg">${isSigned ? 'Untrusted Plugin' : 'Unsigned Plugin'}</h3>
+          <p class="text-sm text-slate-400">${pluginId}</p>
+        </div>
+      </div>
+      <p class="text-sm text-slate-300 mb-2">${statusText}</p>
+      <p class="text-xs text-slate-500 font-mono mb-4">${fpText}</p>
+      <p class="text-sm text-slate-300 mb-3">Type <strong class="text-white">confirm</strong> below to load this plugin:</p>
+      <input
+        id="plugin-confirm-input"
+        type="text"
+        placeholder="Type confirm…"
+        autocomplete="off"
+        class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-600 mb-4"
+      />
+      <div class="flex gap-3 justify-end">
+        <button id="plugin-confirm-cancel" class="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800">Cancel</button>
+        <button id="plugin-confirm-load" disabled class="px-4 py-2 rounded-lg bg-emerald-900/40 border border-emerald-700/60 text-emerald-100 opacity-50 cursor-not-allowed">Load Anyway</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const input = document.getElementById("plugin-confirm-input");
+  const loadBtn = document.getElementById("plugin-confirm-load");
+  const cancelBtn = document.getElementById("plugin-confirm-cancel");
+
+  input.addEventListener("input", () => {
+    const match = input.value.trim().toLowerCase() === "confirm";
+    loadBtn.disabled = !match;
+    loadBtn.classList.toggle("opacity-50", !match);
+    loadBtn.classList.toggle("cursor-not-allowed", !match);
+    loadBtn.classList.toggle("hover:bg-emerald-800/60", match);
+  });
+
+  cancelBtn.addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+
+  loadBtn.addEventListener("click", async () => {
+    if (loadBtn.disabled) return;
+    loadBtn.disabled = true;
+    loadBtn.textContent = "Loading…";
+    try {
+      const res = await fetch(`/api/clients/${clientId}/plugins/${pluginId}/load`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Plugin load failed: ${text}`);
+      } else {
+        window.open(`/plugins/${pluginId}?clientId=${clientId}`, "_blank", "noopener");
+      }
+    } catch {
+      alert("Plugin load failed");
+    }
+    modal.remove();
+  });
+
+  input.focus();
+}
+
 async function loadPluginsForClient(clientId) {
   const section = document.getElementById("plugin-section");
   const container = document.getElementById("plugin-menu");
@@ -336,11 +419,38 @@ async function loadPluginsForClient(clientId) {
       if (plugin.lastError) {
         btn.title = `Last error: ${plugin.lastError}`;
       }
+
+      const sig = plugin.signature;
+      if (sig && sig.signed && !sig.valid) {
+        btn.disabled = true;
+        btn.classList.add("opacity-50", "cursor-not-allowed");
+        btn.title = "Plugin signature is invalid — cannot load";
+      }
+
       const label = document.createElement("span");
+      label.className = "flex items-center gap-1";
       const labelIcon = document.createElement("i");
       labelIcon.className = "fa-solid fa-puzzle-piece";
       label.appendChild(labelIcon);
       label.append(` ${plugin.name || plugin.id}`);
+
+      if (sig) {
+        const trustIcon = document.createElement("i");
+        if (sig.signed && !sig.valid) {
+          trustIcon.className = "fa-solid fa-shield-xmark text-red-400 text-xs ml-1";
+          trustIcon.title = "Invalid signature";
+        } else if (sig.signed && sig.valid && sig.trusted) {
+          trustIcon.className = "fa-solid fa-shield-check text-emerald-400 text-xs ml-1";
+          trustIcon.title = "Trusted";
+        } else if (sig.signed && sig.valid && !sig.trusted) {
+          trustIcon.className = "fa-solid fa-shield text-yellow-400 text-xs ml-1";
+          trustIcon.title = "Signed but untrusted";
+        } else {
+          trustIcon.className = "fa-solid fa-shield-halved text-orange-400 text-xs ml-1";
+          trustIcon.title = "Unsigned";
+        }
+        label.appendChild(trustIcon);
+      }
       const badge = document.createElement("span");
       badge.className =
         "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border" +
@@ -777,17 +887,35 @@ menu.addEventListener("click", async (e) => {
   }
   const pluginId = target.dataset.plugin;
   if (pluginId) {
+    const savedClientId = contextCard;
     try {
-      const res = await fetch(`/api/clients/${contextCard}/plugins/${pluginId}/load`, {
+      const res = await fetch(`/api/clients/${savedClientId}/plugins/${pluginId}/load`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
+
+      if (res.status === 428) {
+        const data = await res.json();
+        closeMenu(clearContext);
+        showPluginConfirmModal(pluginId, savedClientId, data.signature);
+        return;
+      }
+
+      if (res.status === 403) {
+        const data = await res.json();
+        alert(data.error || "Plugin load blocked — invalid signature");
+        closeMenu(clearContext);
+        return;
+      }
+
       if (!res.ok) {
         const text = await res.text();
         alert(`Plugin load failed: ${text}`);
         closeMenu(clearContext);
         return;
       }
-      window.open(`/plugins/${pluginId}?clientId=${contextCard}`, "_blank", "noopener");
+      window.open(`/plugins/${pluginId}?clientId=${savedClientId}`, "_blank", "noopener");
     } catch (err) {
       alert("Plugin load failed");
     }

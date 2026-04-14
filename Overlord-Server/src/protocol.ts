@@ -270,6 +270,14 @@ export type PluginManifest = {
   };
 };
 
+export type PluginSignatureInfo = {
+  signed: boolean;
+  trusted: boolean;
+  valid: boolean;
+  fingerprint?: string;
+  algorithm?: string;
+};
+
 export type PluginEvent = {
   type: "plugin_event";
   pluginId: string;

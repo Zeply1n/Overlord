@@ -65,6 +65,27 @@
           </div>
           <div id="plugin-list" class="mt-4 grid gap-3"></div>
         </section>
+
+        <section id="trusted-keys-section" class="hidden rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <h2 class="text-lg font-semibold"><i class="fa-solid fa-key mr-2"></i>Trusted Signing Keys</h2>
+          <p class="text-slate-400 text-sm mt-1">Plugins signed by a trusted key can be loaded without confirmation. Add key fingerprints (SHA-256 hex) here.</p>
+          <div id="trusted-keys-list" class="mt-4 grid gap-2"></div>
+          <div class="mt-4 flex gap-2">
+            <input
+              id="new-trusted-key-input"
+              type="text"
+              placeholder="Paste 64-char hex fingerprint…"
+              class="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 font-mono text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-600"
+              maxlength="64"
+            />
+            <button
+              id="add-trusted-key-btn"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-900/40 border border-emerald-700/60 hover:bg-emerald-800/60 text-emerald-100"
+            >
+              <i class="fa-solid fa-plus"></i> Add Key
+            </button>
+          </div>
+        </section>
       </div>
     </main>
     <script type="module" src="/assets/nav.js"></script>

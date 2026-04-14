@@ -787,4 +787,96 @@ const { files } = await (await fetch(`/api/plugins/myplugin/data`)).json();
 - The data directory is created automatically on first use (no pre-setup needed)
 - Deleting and reinstalling a plugin leaves `data/` untouched
 
+---
+
+## Plugin Signing
+
+Plugins can be cryptographically signed with Ed25519 keys. The server verifies signatures on upload and displays trust status in the dashboard. Loading unsigned or untrusted plugins requires explicit confirmation.
+
+### Trust Levels
+
+| Status | Badge | Behavior |
+|--------|-------|----------|
+| **Signed + Trusted** | Green shield | Loads immediately |
+| **Signed + Untrusted** | Yellow shield | Must type "confirm" to load |
+| **Unsigned** | Orange shield | Must type "confirm" to load |
+| **Invalid Signature** | Red shield | Blocked — cannot load |
+
+### Generate a Signing Key
+
+```bash
+cd Overlord-Server
+bun run scripts/plugin-keygen.ts --out my-signing-key
+```
+
+This creates:
+- `my-signing-key.key` — private key (keep secret!)
+- `my-signing-key.pub` — public key + fingerprint
+
+The fingerprint (64-char hex SHA-256) is printed to the console. Add it to your server config to trust plugins signed with this key.
+
+### Sign a Plugin
+
+```bash
+cd Overlord-Server
+bun run scripts/plugin-sign.ts --key my-signing-key.key ../plugin-sample-go/sample.zip
+```
+
+This injects a `signature.json` into the ZIP containing the Ed25519 public key and signature.
+
+### Add a Trusted Key
+
+**Via config.json:**
+```json
+{
+  "plugins": {
+    "trustedKeys": [
+      "a1b2c3d4e5f6...64-char-hex-fingerprint..."
+    ]
+  }
+}
+```
+
+**Via environment variable:**
+```
+TRUSTED_PLUGIN_KEYS=fingerprint1,fingerprint2
+```
+
+**Via the web UI:** Go to the Plugins page → Trusted Signing Keys section → paste the fingerprint and click Add Key.
+
+**Via API:**
+```bash
+# Add a trusted key
+curl -X POST /api/plugins/trusted-keys \
+  -H "Content-Type: application/json" \
+  -d '{"fingerprint": "a1b2c3..."}'
+
+# List trusted keys
+curl /api/plugins/trusted-keys
+
+# Remove a trusted key
+curl -X DELETE /api/plugins/trusted-keys/a1b2c3...
+```
+
+### Build Script Integration
+
+Set the `PLUGIN_SIGN_KEY` environment variable to automatically sign plugins during build:
+
+```bash
+# Unix
+PLUGIN_SIGN_KEY=path/to/my-signing-key.key ./build-plugin.sh
+
+# Windows
+set PLUGIN_SIGN_KEY=path\to\my-signing-key.key
+build-plugin.bat
+```
+
+### How Signing Works
+
+1. The canonical content digest is computed by hashing every file in the ZIP (excluding `signature.json`), sorting filenames alphabetically, and concatenating `filename:sha256hex\n` for each
+2. The digest is signed with Ed25519 using the private key
+3. The signature, public key, and algorithm are stored as `signature.json` inside the ZIP
+4. On upload, the server extracts `signature.json`, recomputes the digest, and verifies the signature using `crypto.subtle.verify("Ed25519", ...)`
+5. The signer's fingerprint (`hex(SHA-256(raw_public_key))`) is compared against `plugins.trustedKeys` in the config
+
 

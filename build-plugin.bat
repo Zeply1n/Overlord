@@ -87,4 +87,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM Optional: sign the plugin if PLUGIN_SIGN_KEY is set
+if defined PLUGIN_SIGN_KEY (
+  where bun >nul 2>&1
+  if not errorlevel 1 (
+    echo [sign] Signing plugin with key: %PLUGIN_SIGN_KEY%
+    bun run "%ROOT%Overlord-Server\scripts\plugin-sign.ts" --key "%PLUGIN_SIGN_KEY%" "%ZIP_OUT%"
+  ) else (
+    echo [warn] bun not found, skipping plugin signing
+  )
+)
+
 echo [ok] %ZIP_OUT%

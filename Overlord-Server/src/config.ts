@@ -58,6 +58,9 @@ export interface Config {
   appearance: {
     customCSS: string;
   };
+  plugins: {
+    trustedKeys: string[];
+  };
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -113,6 +116,9 @@ const DEFAULT_CONFIG: Config = {
   },
   appearance: {
     customCSS: "",
+  },
+  plugins: {
+    trustedKeys: [],
   },
 };
 
@@ -432,6 +438,15 @@ export function loadConfig(): Config {
     appearance: {
       customCSS: fileConfig.appearance?.customCSS || DEFAULT_CONFIG.appearance.customCSS,
     },
+    plugins: {
+      trustedKeys: (() => {
+        const envKeys = process.env.TRUSTED_PLUGIN_KEYS;
+        if (envKeys) {
+          return envKeys.split(",").map((k) => k.trim()).filter(Boolean);
+        }
+        return fileConfig.plugins?.trustedKeys || DEFAULT_CONFIG.plugins.trustedKeys;
+      })(),
+    },
   };
 
   if (saveChanged) {
@@ -616,6 +631,31 @@ export async function updateAppearanceConfig(customCSS: string): Promise<Config[
   return next;
 }
 
+export async function updatePluginsConfig(
+  updates: Partial<Config["plugins"]>,
+): Promise<Config["plugins"]> {
+  const current = getConfig();
+  const trustedKeys = (updates.trustedKeys || current.plugins.trustedKeys || [])
+    .map((k) => String(k).trim().toLowerCase())
+    .filter(Boolean);
+  const deduped = Array.from(new Set(trustedKeys));
+
+  const next: Config["plugins"] = {
+    ...current.plugins,
+    trustedKeys: deduped,
+  };
+
+  configCache = {
+    ...current,
+    plugins: next,
+  };
+
+  const fileConfig = readFileConfigForUpdate();
+  fileConfig.plugins = next;
+  await writePersistentFileConfig(fileConfig);
+  return next;
+}
+
 export function getExportableConfig(serverVersion: string): Record<string, unknown> {
   const config = getConfig();
   return {
@@ -632,6 +672,7 @@ export function getExportableConfig(serverVersion: string): Record<string, unkno
     tls: config.tls,
     enrollment: config.enrollment,
     appearance: config.appearance,
+    plugins: config.plugins,
   };
 }
 
@@ -683,6 +724,11 @@ export async function importFullConfig(data: Record<string, any>): Promise<{ app
     } else {
       warnings.push("Custom CSS exceeds 50 KB limit and was skipped.");
     }
+  }
+
+  if (data.plugins && typeof data.plugins === "object") {
+    await updatePluginsConfig(data.plugins);
+    applied.push("plugins");
   }
 
   if (data.auth && typeof data.auth === "object") {

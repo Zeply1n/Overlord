@@ -4,7 +4,8 @@ import AdmZip from "adm-zip";
 import { v4 as uuidv4 } from "uuid";
 import type { ClientInfo } from "../types";
 import { logger } from "../logger";
-import { encodeMessage, type PluginManifest } from "../protocol";
+import { encodeMessage, type PluginManifest, type PluginSignatureInfo } from "../protocol";
+import { verifyPluginSignature, getOrVerifySignature } from "./plugin-signature";
 
 export type PluginState = {
   enabled: Record<string, boolean>;
@@ -126,6 +127,14 @@ export async function ensurePluginExtracted(
     },
   };
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+  try {
+    const sigInfo = await verifyPluginSignature(zipPath);
+    const sigInfoPath = path.join(pluginDir, "signature-info.json");
+    await fs.writeFile(sigInfoPath, JSON.stringify(sigInfo, null, 2));
+  } catch (err) {
+    logger.warn(`[plugin] failed to verify signature for ${safeId}: ${(err as Error).message}`);
+  }
 }
 
 export async function syncPluginBundles(
@@ -146,16 +155,20 @@ export async function syncPluginBundles(
   }
 }
 
+export type PluginManifestWithSignature = PluginManifest & {
+  signature?: PluginSignatureInfo;
+};
+
 export async function listPluginManifests(
   pluginRoot: string,
   pluginState: PluginState,
   saveState: () => Promise<void>,
   ensureExtracted: (pluginId: string) => Promise<void>,
-): Promise<PluginManifest[]> {
+): Promise<PluginManifestWithSignature[]> {
   try {
     await syncPluginBundles(pluginRoot, ensureExtracted);
     const entries = await fs.readdir(pluginRoot, { withFileTypes: true });
-    const manifests: PluginManifest[] = [];
+    const manifests: PluginManifestWithSignature[] = [];
     for (const ent of entries) {
       if (!ent.isDirectory()) continue;
       const manifestPath = path.join(pluginRoot, ent.name, "manifest.json");
@@ -167,7 +180,8 @@ export async function listPluginManifests(
         if (pluginState.enabled[id] === undefined) {
           pluginState.enabled[id] = true;
         }
-        manifests.push({ ...manifest, id, name });
+        const sigInfo = await getOrVerifySignature(pluginRoot, id);
+        manifests.push({ ...manifest, id, name, signature: sigInfo });
       } catch {}
     }
     await saveState();

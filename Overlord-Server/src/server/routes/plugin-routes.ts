@@ -6,11 +6,14 @@ import { requirePermission } from "../../rbac";
 import { canUserAccessClient } from "../../users";
 import * as clientManager from "../../clientManager";
 import { metrics } from "../../metrics";
-import { encodeMessage } from "../../protocol";
+import { encodeMessage, type PluginSignatureInfo } from "../../protocol";
+import { getConfig, updatePluginsConfig } from "../../config";
+import { getOrVerifySignature, BUILTIN_TRUSTED_KEYS } from "../plugin-signature";
 
 type PluginManifest = {
   id: string;
   name: string;
+  signature?: PluginSignatureInfo;
 };
 
 type PluginBundle = {
@@ -71,8 +74,55 @@ export async function handlePluginRoutes(
       lastError: deps.pluginState.lastError[p.id] || "",
       autoLoad: deps.pluginState.autoLoad[p.id] === true,
       autoStartEvents: deps.pluginState.autoStartEvents[p.id] || [],
+      signature: p.signature || { signed: false, trusted: false, valid: false },
     }));
     return Response.json({ plugins: enriched });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/plugins/trusted-keys") {
+    const user = await authenticateRequest(req);
+    if (!user) return new Response("Unauthorized", { status: 401 });
+    if (user.role !== "admin") {
+      return new Response("Forbidden: Admin access required", { status: 403 });
+    }
+    const config = getConfig();
+    const allKeys = Array.from(new Set([...BUILTIN_TRUSTED_KEYS, ...config.plugins.trustedKeys]));
+    return Response.json({ trustedKeys: allKeys, builtinKeys: BUILTIN_TRUSTED_KEYS });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/plugins/trusted-keys") {
+    const user = await authenticateRequest(req);
+    if (!user) return new Response("Unauthorized", { status: 401 });
+    if (user.role !== "admin") {
+      return new Response("Forbidden: Admin access required", { status: 403 });
+    }
+    let body: any = {};
+    try { body = await req.json(); } catch {}
+    const fingerprint = typeof body.fingerprint === "string" ? body.fingerprint.trim().toLowerCase() : "";
+    if (!fingerprint || !/^[a-f0-9]{64}$/.test(fingerprint)) {
+      return Response.json({ ok: false, error: "Invalid fingerprint (expected 64-char hex SHA-256)" }, { status: 400 });
+    }
+    const config = getConfig();
+    const keys = [...config.plugins.trustedKeys];
+    if (!keys.includes(fingerprint)) {
+      keys.push(fingerprint);
+      await updatePluginsConfig({ trustedKeys: keys });
+    }
+    return Response.json({ ok: true, trustedKeys: keys });
+  }
+
+  const trustedKeyDeleteMatch = url.pathname.match(/^\/api\/plugins\/trusted-keys\/([a-f0-9]{64})$/);
+  if (req.method === "DELETE" && trustedKeyDeleteMatch) {
+    const user = await authenticateRequest(req);
+    if (!user) return new Response("Unauthorized", { status: 401 });
+    if (user.role !== "admin") {
+      return new Response("Forbidden: Admin access required", { status: 403 });
+    }
+    const fingerprint = trustedKeyDeleteMatch[1].toLowerCase();
+    const config = getConfig();
+    const keys = config.plugins.trustedKeys.filter((k) => k.toLowerCase() !== fingerprint);
+    await updatePluginsConfig({ trustedKeys: keys });
+    return Response.json({ ok: true, trustedKeys: keys });
   }
 
   const clientPluginsMatch = url.pathname.match(/^\/api\/clients\/(.+)\/plugins$/);
@@ -100,6 +150,7 @@ export async function handlePluginRoutes(
       loaded: loaded.has(manifest.id),
       enabled: deps.pluginState.enabled[manifest.id] !== false,
       lastError: deps.pluginState.lastError[manifest.id] || "",
+      signature: manifest.signature || { signed: false, trusted: false, valid: false },
     }));
     return Response.json({ plugins });
   }
@@ -149,12 +200,14 @@ export async function handlePluginRoutes(
       return Response.json({ ok: false, error: (err as Error).message }, { status: 400 });
     }
 
+    const sigInfo = await getOrVerifySignature(deps.PLUGIN_ROOT, pluginId);
+
     if (deps.pluginState.enabled[pluginId] === undefined) {
-      deps.pluginState.enabled[pluginId] = true;
+      deps.pluginState.enabled[pluginId] = sigInfo.trusted === true;
       await deps.savePluginState();
     }
 
-    return Response.json({ ok: true, id: pluginId });
+    return Response.json({ ok: true, id: pluginId, enabled: deps.pluginState.enabled[pluginId], signature: sigInfo });
   }
 
   const pluginEnableMatch = url.pathname.match(/^\/api\/plugins\/(.+)\/enable$/);
@@ -177,6 +230,19 @@ export async function handlePluginRoutes(
       body = await req.json();
     } catch {}
     const enabled = !!body.enabled;
+
+    if (enabled) {
+      const sigInfo = await getOrVerifySignature(deps.PLUGIN_ROOT, pluginId);
+      if (!sigInfo.trusted) {
+        if (body.confirmed !== true) {
+          return Response.json(
+            { ok: false, error: "confirmation_required", signature: sigInfo },
+            { status: 428 },
+          );
+        }
+      }
+    }
+
     deps.pluginState.enabled[pluginId] = enabled;
     await deps.savePluginState();
     return Response.json({ ok: true, id: pluginId, enabled });
@@ -202,6 +268,14 @@ export async function handlePluginRoutes(
       body = await req.json();
     } catch {}
     const autoLoad = !!body.autoLoad;
+
+    if (autoLoad && deps.pluginState.enabled[pluginId] === false) {
+      return Response.json(
+        { ok: false, error: "Plugin must be enabled before auto-load can be turned on" },
+        { status: 400 },
+      );
+    }
+
     deps.pluginState.autoLoad[pluginId] = autoLoad;
 
     if (Array.isArray(body.autoStartEvents)) {
@@ -474,12 +548,35 @@ export async function handlePluginRoutes(
     if (deps.isPluginLoading(targetId, pluginId)) {
       return Response.json({ ok: true, loading: true });
     }
+
+    const sigInfo = await getOrVerifySignature(deps.PLUGIN_ROOT, pluginId);
+
+    if (sigInfo.signed && !sigInfo.valid) {
+      return Response.json(
+        { ok: false, error: "Plugin signature is invalid — the plugin may have been tampered with", signature: sigInfo },
+        { status: 403 },
+      );
+    }
+
+    if (!sigInfo.trusted) {
+      let body: any = {};
+      try {
+        body = await req.json();
+      } catch {}
+      if (body.confirmed !== true) {
+        return Response.json(
+          { ok: false, error: "confirmation_required", signature: sigInfo },
+          { status: 428 },
+        );
+      }
+    }
+
     try {
       const bundle = await deps.loadPluginBundle(pluginId, target.os, target.arch);
       deps.markPluginLoading(targetId, pluginId);
       deps.sendPluginBundle(target, bundle);
       metrics.recordCommand("plugin_load");
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, signature: sigInfo });
     } catch (err) {
       return Response.json({ ok: false, error: (err as Error).message }, { status: 400 });
     }
