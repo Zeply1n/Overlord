@@ -46,6 +46,14 @@ describe("checkPermission", () => {
     expect(checkPermission(makeUser({ role: "operator" }), "clients:control")).toBe(true);
   });
 
+  test("operator has clients:enroll", () => {
+    expect(checkPermission(makeUser({ role: "operator" }), "clients:enroll")).toBe(true);
+  });
+
+  test("viewer does not have clients:enroll", () => {
+    expect(checkPermission(makeUser({ role: "viewer" }), "clients:enroll")).toBe(false);
+  });
+
   test("viewer does not have clients:control", () => {
     expect(checkPermission(makeUser({ role: "viewer" }), "clients:control")).toBe(false);
   });
@@ -172,6 +180,7 @@ describe("getPermissionDescription", () => {
     ["clients:control", "Control clients (execute commands, desktop, console, files)"],
     ["clients:view", "View connected clients"],
     ["clients:build", "Build client binaries"],
+    ["clients:enroll", "Manage client enrollment approvals"],
     ["audit:view", "View audit logs"],
   ];
 

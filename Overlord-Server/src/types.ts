@@ -32,6 +32,8 @@ export type ClientInfo = {
   elevation?: string;
   permissions?: Record<string, boolean>;
   enrollmentStatus?: EnrollmentStatus;
+  buildTag?: string;
+  builtByUserId?: number;
   publicKey?: string;
   keyFingerprint?: string;
   disconnectReason?: string;
@@ -47,6 +49,8 @@ export type ListFilters = {
   osFilter?: string;
   countryFilter?: string;
   enrollmentFilter?: string;
+  builtByUserId?: number;
+  requireBuildOwner?: boolean;
   allowedClientIds?: string[];
   deniedClientIds?: string[];
 };

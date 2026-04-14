@@ -10,28 +10,37 @@ import {
   unbanIp,
   isIpBanned,
   listBannedIps,
+  getClientBuildOwnership,
 } from "../../db";
 import { logAudit, AuditAction } from "../../auditLog";
 import * as clientManager from "../../clientManager";
 import { setOnlineState } from "../../db";
-import {
-  canUserAccessClient,
-  getUserClientAccessScope,
-  listUserClientRuleIdsByAccess,
-} from "../../users";
+import { requirePermission } from "../../rbac";
 
-function getClientScopeFilters(userId: number, role: string): { allowedClientIds?: string[]; deniedClientIds?: string[] } {
+function getClientScopeFilters(userId: number, role: string): {
+  allowedClientIds?: string[];
+  deniedClientIds?: string[];
+  builtByUserId?: number;
+  requireBuildOwner?: boolean;
+} {
   if (role === "admin") return {};
-  const scope = getUserClientAccessScope(userId);
-  if (scope === "none") return { allowedClientIds: [] };
-  if (scope === "all") return {};
-  if (scope === "allowlist") {
-    return { allowedClientIds: listUserClientRuleIdsByAccess(userId, "allow") };
-  }
-  if (scope === "denylist") {
-    return { deniedClientIds: listUserClientRuleIdsByAccess(userId, "deny") };
-  }
-  return { allowedClientIds: [] };
+  return {
+    builtByUserId: userId,
+    requireBuildOwner: true,
+  };
+}
+
+function canManageEnrollmentClient(
+  userId: number,
+  role: string,
+  clientId: string,
+): boolean {
+  if (role === "admin") return true;
+  if (role !== "operator") return false;
+
+  const ownership = getClientBuildOwnership(clientId);
+  if (!ownership || ownership.builtByUserId == null) return false;
+  return ownership.builtByUserId === userId;
 }
 
 let _postApproveHook: ((clientId: string) => void) | undefined;
@@ -48,7 +57,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "GET" && url.pathname === "/api/enrollment/pending") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const scopeFilters = getClientScopeFilters(user.userId, user.role);
     const clients = getPendingClients(scopeFilters);
@@ -59,6 +73,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "GET" && url.pathname === "/api/enrollment/stats") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const scopeFilters = getClientScopeFilters(user.userId, user.role);
     const stats = getEnrollmentStats(scopeFilters);
@@ -81,13 +101,18 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && approveMatch) {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const clientId = decodeURIComponent(approveMatch[1]);
     const current = getClientEnrollmentStatus(clientId);
     if (!current) return Response.json({ error: "Client not found" }, { status: 404 });
 
-    if (!canUserAccessClient(user.userId, user.role, clientId)) {
+    if (!canManageEnrollmentClient(user.userId, user.role, clientId)) {
       return new Response("Forbidden: Client access denied", { status: 403 });
     }
 
@@ -113,13 +138,18 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && denyMatch) {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const clientId = decodeURIComponent(denyMatch[1]);
     const current = getClientEnrollmentStatus(clientId);
     if (!current) return Response.json({ error: "Client not found" }, { status: 404 });
 
-    if (!canUserAccessClient(user.userId, user.role, clientId)) {
+    if (!canManageEnrollmentClient(user.userId, user.role, clientId)) {
       return new Response("Forbidden: Client access denied", { status: 403 });
     }
 
@@ -143,13 +173,18 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && resetMatch) {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const clientId = decodeURIComponent(resetMatch[1]);
     const current = getClientEnrollmentStatus(clientId);
     if (!current) return Response.json({ error: "Client not found" }, { status: 404 });
 
-    if (!canUserAccessClient(user.userId, user.role, clientId)) {
+    if (!canManageEnrollmentClient(user.userId, user.role, clientId)) {
       return new Response("Forbidden: Client access denied", { status: 403 });
     }
 
@@ -162,7 +197,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && url.pathname === "/api/enrollment/bulk") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     let body: any;
     try {
@@ -184,7 +224,7 @@ export async function handleEnrollmentRoutes(
     if (action === "ban-ip") {
       let banned = 0;
       for (const id of ids) {
-        if (!canUserAccessClient(user.userId, user.role, id)) continue;
+        if (!canManageEnrollmentClient(user.userId, user.role, id)) continue;
         const clientIp = getClientIp(id);
         if (!clientIp) continue;
         banIp(clientIp, `Bulk banned from purgatory by ${user.username}`);
@@ -212,7 +252,7 @@ export async function handleEnrollmentRoutes(
     const status = action === "approve" ? "approved" : action === "deny" ? "denied" : "pending";
     let updated = 0;
     for (const id of ids) {
-      if (!canUserAccessClient(user.userId, user.role, id)) continue;
+      if (!canManageEnrollmentClient(user.userId, user.role, id)) continue;
       const ok = setClientEnrollmentStatus(
         id,
         status as "approved" | "denied" | "pending",
@@ -244,13 +284,18 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && banMatch) {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const clientId = decodeURIComponent(banMatch[1]);
     const targetIp = getClientIp(clientId);
     if (!targetIp) return Response.json({ error: "Client IP not found" }, { status: 404 });
 
-    if (!canUserAccessClient(user.userId, user.role, clientId)) {
+    if (!canManageEnrollmentClient(user.userId, user.role, clientId)) {
       return new Response("Forbidden: Client access denied", { status: 403 });
     }
 
@@ -280,7 +325,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "GET" && url.pathname === "/api/enrollment/banned-ips") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     return Response.json({ items: listBannedIps() });
   }
@@ -289,7 +339,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "DELETE" && url.pathname === "/api/enrollment/banned-ips") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const ipToUnban = (url.searchParams.get("ip") || "").trim();
     if (!ipToUnban) return Response.json({ error: "Missing ip parameter" }, { status: 400 });
@@ -314,7 +369,12 @@ export async function handleEnrollmentRoutes(
   if (req.method === "POST" && url.pathname === "/api/enrollment/ban-ip") {
     const user = await authenticateRequest(req);
     if (!user) return new Response("Unauthorized", { status: 401 });
-    if (user.role === "viewer") return new Response("Forbidden", { status: 403 });
+    try {
+      requirePermission(user, "clients:enroll");
+    } catch (error) {
+      if (error instanceof Response) return error;
+      return new Response("Forbidden", { status: 403 });
+    }
 
     let body: any;
     try { body = await req.json(); } catch { return Response.json({ error: "Invalid JSON" }, { status: 400 }); }

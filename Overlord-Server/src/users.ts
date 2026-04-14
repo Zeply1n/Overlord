@@ -277,7 +277,7 @@ export function listUserClientRuleIdsByAccess(
   access: ClientAccessRuleKind,
 ): string[] {
   const entry = getUserAccessCacheEntry(userId);
-  const values = access === "allowlist" ? [] : access === "allow" ? entry.allow : entry.deny;
+  const values = access === "allow" ? entry.allow : entry.deny;
   return Array.from(values).sort((left, right) => left.localeCompare(right));
 }
 
@@ -728,6 +728,10 @@ export function canViewAuditLogs(role: UserRole): boolean {
   return role === "admin" || role === "operator";
 }
 
+export function canManageEnrollment(role: UserRole): boolean {
+  return role === "admin" || role === "operator";
+}
+
 export function hasPermission(role: UserRole, permission: string, userId?: number): boolean {
   switch (permission) {
     case "users:manage":
@@ -739,6 +743,8 @@ export function hasPermission(role: UserRole, permission: string, userId?: numbe
     case "clients:build":
       if (userId !== undefined) return canBuildClients(userId, role);
       return role === "admin" || role === "operator";
+    case "clients:enroll":
+      return canManageEnrollment(role);
     case "audit:view":
       return canViewAuditLogs(role);
     default:

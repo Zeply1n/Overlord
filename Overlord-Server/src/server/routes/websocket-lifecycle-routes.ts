@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import geoip from "geoip-lite";
 import { logAudit, AuditAction } from "../../auditLog";
 import * as clientManager from "../../clientManager";
-import { clientExists, setOnlineState, upsertClientRow, getClientEnrollmentStatus, setClientEnrollmentStatus, lookupClientByPublicKey, getClientPublicKeyById } from "../../db";
+import { clientExists, setOnlineState, upsertClientRow, getClientEnrollmentStatus, setClientEnrollmentStatus, lookupClientByPublicKey, getClientPublicKeyById, getBuildByTag } from "../../db";
 import { logger } from "../../logger";
 import { metrics } from "../../metrics";
 import { decodeMessage, encodeMessage, type WireMessage } from "../../protocol";
@@ -272,6 +272,11 @@ export async function handleWebSocketMessage(
         }
 
         const resolvedId = ws.data.clientId;
+        const buildTag = typeof (payload as any).buildTag === "string"
+          ? (payload as any).buildTag.trim()
+          : "";
+        const build = buildTag ? getBuildByTag(buildTag) : null;
+        const builtByUserId = build?.builtByUserId;
 
         if (enrollmentStatus === "denied") {
           logger.info(`[purgatory] denied client ${resolvedId} tried to connect`);
@@ -305,6 +310,8 @@ export async function handleWebSocketMessage(
             publicKey,
             keyFingerprint,
             enrollmentStatus: "pending",
+            buildTag: buildTag || undefined,
+            builtByUserId,
           });
 
           logger.info(`[purgatory] client ${resolvedId} is pending approval`);
@@ -362,6 +369,8 @@ export async function handleWebSocketMessage(
           publicKey,
           keyFingerprint,
           enrollmentStatus: "approved",
+          buildTag: buildTag || undefined,
+          builtByUserId,
           online: 1 as any,
           lastSeen: Date.now(),
         });
@@ -418,7 +427,6 @@ export async function handleWebSocketMessage(
           });
           (ws as any).data.wasKnown = true;
 
-          const buildTag = typeof (payload as any).buildTag === "string" ? (payload as any).buildTag : "";
           if (buildTag) {
             deps.handleBuildTagConnection(infoObj.id, buildTag);
           }

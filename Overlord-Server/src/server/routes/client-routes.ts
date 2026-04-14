@@ -77,8 +77,25 @@ export async function handleClientRoutes(
     const osFilter = url.searchParams.get("os") || "all";
     const countryFilter = url.searchParams.get("country") || "all";
     const enrollmentFilter = url.searchParams.get("enrollmentFilter") || "approved";
+    const isEnrollmentRequest = url.searchParams.has("enrollmentFilter");
     if (user.role === "admin") {
       const result = listClients({ page, pageSize, search, sort, statusFilter, osFilter, countryFilter, enrollmentFilter });
+      return Response.json(result, { headers: deps.CORS_HEADERS });
+    }
+
+    if (user.role === "operator" && isEnrollmentRequest) {
+      const result = listClients({
+        page,
+        pageSize,
+        search,
+        sort,
+        statusFilter,
+        osFilter,
+        countryFilter,
+        enrollmentFilter,
+        builtByUserId: user.userId,
+        requireBuildOwner: true,
+      });
       return Response.json(result, { headers: deps.CORS_HEADERS });
     }
 

