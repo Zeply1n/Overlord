@@ -16,7 +16,7 @@ function escapeHtml(text) {
 }
 
 function cardDigest(c) {
-  return `${c.id}|${!!c.online}|${c.lastSeen}|${c.pingMs}|${c.host}|${c.user}|${c.os}|${c.arch}|${c.version}|${c.monitors}|${c.thumbnail}|${c.country}|${c.nickname}|${c.customTag}|${c.customTagNote}|${!!c.bookmarked}|${!!c.isAdmin}|${c.elevation}|${c.cpu}|${c.gpu}|${c.ram}|${c.hwid}|${c.disconnectReason}|${c.disconnectDetail}|${JSON.stringify(c.permissions)}`;
+  return `${c.id}|${!!c.online}|${c.lastSeen}|${c.pingMs}|${c.host}|${c.user}|${c.os}|${c.arch}|${c.version}|${c.monitors}|${c.thumbnail}|${c.country}|${c.nickname}|${c.customTag}|${c.customTagNote}|${!!c.bookmarked}|${!!c.isAdmin}|${c.elevation}|${c.cpu}|${c.gpu}|${c.ram}|${c.hwid}|${c.disconnectReason}|${c.disconnectDetail}|${JSON.stringify(c.permissions)}|${c.groupId}|${c.groupName}|${c.groupColor}`;
 }
 
 export function createRenderer({
@@ -373,6 +373,9 @@ export function createRenderer({
     card.dataset.customTag = String(client.customTag || "");
     card.dataset.bookmarked = String(!!client.bookmarked);
     card.dataset.admin = String(!!client.isAdmin);
+    card.dataset.groupId = String(client.groupId || "");
+    card.dataset.groupName = String(client.groupName || "");
+    card.dataset.groupColor = String(client.groupColor || "");
     card._customTagNote = String(client.customTagNote || "");
     const os = osBadge(client.os || "unknown");
     const arch = archBadge(client.arch || "");
@@ -387,6 +390,8 @@ export function createRenderer({
     const hasTagNote = customTag.length > 0 && customTagNote.length > 0;
     const isTagNoteExpanded = hasTagNote && wasTagNoteExpanded;
     card.dataset.tagNoteExpanded = isTagNoteExpanded ? "true" : "false";
+    const groupName = String(client.groupName || "").trim();
+    const groupColor = String(client.groupColor || "").trim();
     const hasHwInfo = !!(client.cpu || client.gpu || client.ram);
     const isHwExpanded = hasHwInfo && wasHwExpanded;
     card.dataset.hwExpanded = isHwExpanded ? "true" : "false";
@@ -397,7 +402,13 @@ export function createRenderer({
       return [...counts.entries()].map(([name, n]) => n > 1 ? `${name} <span class="hw-gpu-count">&times;${n}</span>` : escapeHtml(name)).join(", ");
     };
     const gpuHtml = dedupeGpu(client.gpu);
-    card.className = `card rounded-xl border ${client.bookmarked ? "border-yellow-600/60" : "border-slate-800"} bg-slate-900/70 p-4 shadow-lg ${client.online ? "" : "card-offline"} tone-${os.tone}`;
+    const borderClass = client.bookmarked ? "border-yellow-600/60" : "border-slate-800";
+    card.className = `card rounded-xl border ${borderClass} bg-slate-900/70 p-4 shadow-lg ${client.online ? "" : "card-offline"} tone-${os.tone}`;
+    if (!client.bookmarked && groupColor) {
+      card.style.setProperty("--group-color", groupColor);
+    } else {
+      card.style.removeProperty("--group-color");
+    }
     const cardThumb = client.thumbnail
       ? (() => {
           const wrapper = document.createElement("div");
@@ -429,6 +440,7 @@ export function createRenderer({
             <span>${escapeHtml(displayName)}</span>
             ${nickname && client.host ? `<span class="pill pill-ghost text-xs"><i class="fa-solid fa-laptop"></i> ${escapeHtml(client.host)}</span>` : ""}
             ${customTag ? `<button type="button" class="client-tag-toggle pill text-xs border border-amber-700/80 bg-amber-900/30 text-amber-200 ${hasTagNote ? "cursor-pointer hover:bg-amber-800/40" : "cursor-default opacity-90"}" ${hasTagNote ? `aria-expanded="${isTagNoteExpanded ? "true" : "false"}"` : `disabled aria-disabled="true"`}><i class="fa-solid fa-tag"></i> ${escapeHtml(customTag)} ${customTagNote ? `<i class="fa-regular fa-note-sticky"></i><i class="fa-solid ${isTagNoteExpanded ? "fa-chevron-up" : "fa-chevron-down"}"></i>` : ""}</button>` : ""}
+            ${groupName ? `<span class="pill text-xs border" style="border-color:${escapeHtml(groupColor)};background:${escapeHtml(groupColor)}22;color:${escapeHtml(groupColor)}"><i class="fa-solid fa-layer-group"></i> ${escapeHtml(groupName)}</span>` : ""}
             <span class="text-slate-300 text-lg font-semibold flex items-center gap-1"><i class="fa-solid fa-user"></i> ${escapeHtml(client.user || "unknown")}</span>
             <span class="pill ${client.online ? "pill-online" : "pill-offline"}">
               <i class="fa-solid fa-circle"></i>

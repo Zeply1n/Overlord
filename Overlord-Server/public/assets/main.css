@@ -1781,7 +1781,7 @@ mark.search-current {
 #grid article.card {
   position: relative;
   overflow: hidden;
-  border-color: rgba(71, 85, 105, 0.55) !important;
+  border-color: var(--group-color, rgba(71, 85, 105, 0.55)) !important;
   backdrop-filter: blur(4px);
   transition:
     transform 170ms ease,
@@ -1791,10 +1791,11 @@ mark.search-current {
 
 #grid article.card:hover {
   transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.45) !important;
+  border-color: var(--group-color, rgba(99, 102, 241, 0.45)) !important;
   box-shadow:
     0 18px 36px rgba(2, 6, 23, 0.45),
-    0 0 0 1px rgba(99, 102, 241, 0.14);
+    0 0 0 1px color-mix(in srgb, var(--group-color, rgba(99, 102, 241, 0.14)) 40%, transparent),
+    0 0 20px 4px color-mix(in srgb, var(--group-color, transparent) 30%, transparent);
 }
 
 /* Cohesive UI polish layer */

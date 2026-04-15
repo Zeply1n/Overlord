@@ -22,6 +22,7 @@ const searchInput = document.getElementById("search");
 const sortSelect = document.getElementById("sort");
 const filterStatusSelect = document.getElementById("filter-status");
 const filterOsSelect = document.getElementById("filter-os");
+const filterGroupSelect = document.getElementById("filter-group");
 const showOfflineToggle = document.getElementById("toggle-offline");
 const selectAllBtn = document.getElementById("select-all");
 const clearSelectionBtn = document.getElementById("clear-selection");
@@ -45,6 +46,7 @@ const PREF_FILTER_STATUS_KEY = "overlord_filter_status";
 const PREF_SORT_KEY = "overlord_sort";
 const PREF_FILTER_OS_KEY = "overlord_filter_os";
 const PREF_FILTER_COUNTRY_KEY = "overlord_filter_country";
+const PREF_FILTER_GROUP_KEY = "overlord_filter_group";
 
 let currentUser = null;
 let contextCard = null;
@@ -498,6 +500,7 @@ function initializeRenderer() {
     userRole: currentUser?.role,
   });
   registerRenderer(renderMerge);
+  refreshGroupFilter();
   loadWithOptions();
   startAutoRefresh();
 
@@ -588,6 +591,14 @@ filterOsSelect?.addEventListener("change", (e) => {
   loadWithOptions({ force: true, reorder: true });
 });
 
+filterGroupSelect?.addEventListener("change", (e) => {
+  state.filterGroup = e.target.value;
+  localStorage.setItem(PREF_FILTER_GROUP_KEY, state.filterGroup);
+  state.page = 1;
+  state.lastDigest = "";
+  loadWithOptions({ force: true, reorder: true });
+});
+
 initCountryPicker((code) => {
   state.filterCountry = code;
   localStorage.setItem(PREF_FILTER_COUNTRY_KEY, code);
@@ -607,7 +618,7 @@ initCountryPicker((code) => {
   }
 
   const savedSort = localStorage.getItem(PREF_SORT_KEY);
-  const validSorts = ["stable", "last_seen_desc", "host_asc", "ping_asc", "ping_desc", "country_asc", "country_desc"];
+  const validSorts = ["stable", "last_seen_desc", "host_asc", "ping_asc", "ping_desc", "country_asc", "country_desc", "group_asc", "group_desc"];
   if (savedSort && validSorts.includes(savedSort)) {
     state.sort = savedSort;
     if (sortSelect) sortSelect.value = savedSort;
@@ -622,6 +633,12 @@ initCountryPicker((code) => {
   const savedCountry = localStorage.getItem(PREF_FILTER_COUNTRY_KEY);
   if (savedCountry) {
     state.filterCountry = savedCountry;
+  }
+
+  const savedGroup = localStorage.getItem(PREF_FILTER_GROUP_KEY);
+  if (savedGroup) {
+    state.filterGroup = savedGroup;
+    if (filterGroupSelect) filterGroupSelect.value = savedGroup;
   }
 })();
 
@@ -833,6 +850,148 @@ window.setClientTag = async (clientId, tag, note) => {
     return false;
   }
 };
+
+window.setClientGroup = async (clientId, groupId) => {
+  if (!clientId) return false;
+  try {
+    const res = await fetch(`/api/clients/${clientId}/group`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groupId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to update client group");
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(err);
+    alert("Failed to update client group");
+    return false;
+  }
+};
+
+async function loadGroups() {
+  try {
+    const res = await fetch("/api/groups");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.groups || [];
+  } catch { return []; }
+}
+
+async function refreshGroupFilter() {
+  const groups = await loadGroups();
+  if (!filterGroupSelect) return groups;
+  const current = filterGroupSelect.value;
+  filterGroupSelect.innerHTML = '<option value="all">All Groups</option><option value="none">No Group</option>';
+  groups.forEach((g) => {
+    const opt = document.createElement("option");
+    opt.value = String(g.id);
+    opt.textContent = g.name;
+    opt.style.color = g.color;
+    filterGroupSelect.appendChild(opt);
+  });
+  filterGroupSelect.value = current;
+  return groups;
+}
+
+async function openGroupPicker(clientId) {
+  const groups = await loadGroups();
+  const card = getClientCard(clientId);
+  const currentGroupId = card?.dataset.groupId || "";
+
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black/60";
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const modal = document.createElement("div");
+  modal.className = "bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-6 w-[400px] max-h-[80vh] flex flex-col gap-4";
+  modal.innerHTML = `
+    <h3 class="text-lg font-semibold text-slate-100 flex items-center gap-2"><i class="fa-solid fa-layer-group text-blue-400"></i> Set Group</h3>
+    <div class="group-picker-list flex flex-col gap-1 overflow-y-auto max-h-60"></div>
+    <div class="border-t border-slate-700 pt-3">
+      <p class="text-xs text-slate-400 mb-2">Create new group</p>
+      <div class="flex gap-2">
+        <input type="text" class="group-new-name flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500" placeholder="Group name" maxlength="64" />
+        <input type="color" class="group-new-color w-10 h-10 rounded-lg border border-slate-700 bg-slate-800 cursor-pointer" value="#3b82f6" />
+        <button class="group-create-btn px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">Create</button>
+      </div>
+    </div>
+  `;
+
+  const listEl = modal.querySelector(".group-picker-list");
+
+  function renderList() {
+    listEl.innerHTML = "";
+    const noneBtn = document.createElement("button");
+    noneBtn.className = `w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${!currentGroupId ? "bg-slate-700 text-white" : "text-slate-300 hover:bg-slate-800"}`;
+    noneBtn.innerHTML = '<i class="fa-solid fa-xmark text-slate-500"></i> No Group';
+    noneBtn.addEventListener("click", async () => {
+      const ok = await window.setClientGroup(clientId, null);
+      if (ok) setTimeout(() => loadWithOptions({ force: true }), 200);
+      overlay.remove();
+    });
+    listEl.appendChild(noneBtn);
+
+    groups.forEach((g) => {
+      const btn = document.createElement("button");
+      const isActive = String(g.id) === currentGroupId;
+      btn.className = `w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isActive ? "bg-slate-700 text-white" : "text-slate-300 hover:bg-slate-800"}`;
+      btn.innerHTML = `<span class="inline-block w-3 h-3 rounded-full flex-shrink-0" style="background:${g.color}"></span> ${escapeHtml(g.name)}`;
+      btn.addEventListener("click", async () => {
+        const ok = await window.setClientGroup(clientId, g.id);
+        if (ok) setTimeout(() => loadWithOptions({ force: true }), 200);
+        overlay.remove();
+      });
+      listEl.appendChild(btn);
+    });
+  }
+
+  renderList();
+
+  const createBtn = modal.querySelector(".group-create-btn");
+  createBtn.addEventListener("click", async () => {
+    const nameInput = modal.querySelector(".group-new-name");
+    const colorInput = modal.querySelector(".group-new-color");
+    const name = nameInput.value.trim();
+    const color = colorInput.value;
+    if (!name) { nameInput.focus(); return; }
+    try {
+      const res = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "Failed to create group");
+        return;
+      }
+      const newGroup = await res.json();
+      groups.push(newGroup);
+      nameInput.value = "";
+      renderList();
+      refreshGroupFilter();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create group");
+    }
+  });
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  modal.querySelector(".group-new-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") createBtn.click();
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 window.banClient = async (clientId) => {
   if (!clientId) return;
@@ -1067,6 +1226,11 @@ menu.addEventListener("click", async (e) => {
       setTimeout(() => loadWithOptions({ force: true }), 200);
     }
     closeMenu(clearContext);
+    return;
+  } else if (action === "set-group") {
+    const savedClientId = contextCard;
+    closeMenu(clearContext);
+    openGroupPicker(savedClientId);
     return;
   }
 

@@ -38,6 +38,9 @@ export type ClientInfo = {
   keyFingerprint?: string;
   disconnectReason?: string;
   disconnectDetail?: string;
+  groupId?: number | null;
+  groupName?: string | null;
+  groupColor?: string | null;
 };
 
 export type ListFilters = {
@@ -53,6 +56,7 @@ export type ListFilters = {
   requireBuildOwner?: boolean;
   allowedClientIds?: string[];
   deniedClientIds?: string[];
+  groupFilter?: string;
 };
 
 export type ListItem = ClientInfo & {

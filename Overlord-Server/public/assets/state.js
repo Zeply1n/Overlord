@@ -6,6 +6,7 @@ export const state = {
   filterStatus: "all",
   filterOs: "all",
   filterCountry: "all",
+  filterGroup: "all",
   lastDigest: "",
   isLoading: false,
   pendingForce: false,

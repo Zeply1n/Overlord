@@ -88,6 +88,13 @@
           >
             <option value="all">All OS</option>
           </select>
+          <select
+            id="filter-group"
+            class="bg-slate-900/70 border border-slate-800 rounded-lg px-3 py-2 text-slate-100"
+          >
+            <option value="all">All Groups</option>
+            <option value="none">No Group</option>
+          </select>
           <div id="country-picker-anchor" class="relative"></div>
           <select
             id="sort"
@@ -100,6 +107,8 @@
             <option value="ping_desc">Ping ↓</option>
             <option value="country_asc">Country A→Z</option>
             <option value="country_desc">Country Z→A</option>
+            <option value="group_asc">Group A→Z</option>
+            <option value="group_desc">Group Z→A</option>
             <option value="admin_first">Admin first</option>
           </select>
           <button

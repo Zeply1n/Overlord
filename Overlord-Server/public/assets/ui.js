@@ -44,6 +44,7 @@ const MENU_GROUPS = [
       { label: "Reconnect",             icon: "fa-solid fa-rotate",            icolor: "text-slate-300", action: "reconnect" },
       { label: "Set Nickname",          icon: "fa-solid fa-signature",         icolor: "text-slate-300", action: "set-nickname" },
       { label: "Set Custom Tag",        icon: "fa-solid fa-tag",               icolor: "text-slate-300", action: "set-custom-tag" },
+      { label: "Set Group",              icon: "fa-solid fa-layer-group",       icolor: "text-blue-300",  action: "set-group" },
       { divider: true },
       { label: "Elevate (macOS)",       icon: "fa-solid fa-arrow-up-right-dots", icolor: "text-green-400", action: "elevate" },
       { divider: true },

@@ -125,6 +125,20 @@ try {
 } catch {}
 
 db.run(`
+  CREATE TABLE IF NOT EXISTS client_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    color TEXT NOT NULL DEFAULT '#3b82f6',
+    created_at INTEGER NOT NULL
+  );
+`);
+
+try {
+  db.run(`ALTER TABLE clients ADD COLUMN group_id INTEGER REFERENCES client_groups(id) ON DELETE SET NULL`);
+} catch {}
+db.run(`CREATE INDEX IF NOT EXISTS idx_clients_group_id ON clients(group_id);`);
+
+db.run(`
   CREATE TABLE IF NOT EXISTS banned_ips (
     ip TEXT PRIMARY KEY,
     reason TEXT,
@@ -589,6 +603,75 @@ export function setClientTag(
   return ((result as any)?.changes || 0) > 0;
 }
 
+export interface ClientGroup {
+  id: number;
+  name: string;
+  color: string;
+  createdAt: number;
+  clientCount?: number;
+}
+
+export function listGroups(): ClientGroup[] {
+  const rows = db.query<any>(
+    `SELECT g.id, g.name, g.color, g.created_at as createdAt,
+            COUNT(c.id) as clientCount
+     FROM client_groups g
+     LEFT JOIN clients c ON c.group_id = g.id
+     GROUP BY g.id
+     ORDER BY g.name ASC`,
+  ).all();
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    color: r.color,
+    createdAt: r.createdAt,
+    clientCount: r.clientCount ?? 0,
+  }));
+}
+
+export function getGroup(id: number): ClientGroup | null {
+  const row = db.query<any>(
+    `SELECT id, name, color, created_at as createdAt FROM client_groups WHERE id=?`,
+  ).get(id);
+  return row ? { id: row.id, name: row.name, color: row.color, createdAt: row.createdAt } : null;
+}
+
+export function createGroup(name: string, color: string): ClientGroup {
+  const now = Date.now();
+  const result = db.run(
+    `INSERT INTO client_groups (name, color, created_at) VALUES (?, ?, ?)`,
+    name.trim(),
+    color,
+    now,
+  );
+  return { id: Number(result.lastInsertRowid), name: name.trim(), color, createdAt: now };
+}
+
+export function updateGroup(id: number, name: string, color: string): boolean {
+  const result = db.run(
+    `UPDATE client_groups SET name=?, color=? WHERE id=?`,
+    name.trim(),
+    color,
+    id,
+  );
+  return ((result as any)?.changes || 0) > 0;
+}
+
+export function deleteGroup(id: number): boolean {
+  db.run(`UPDATE clients SET group_id=NULL WHERE group_id=?`, id);
+  const result = db.run(`DELETE FROM client_groups WHERE id=?`, id);
+  return ((result as any)?.changes || 0) > 0;
+}
+
+export function setClientGroup(clientId: string, groupId: number | null): boolean {
+  const result = db.run(
+    `UPDATE clients SET group_id=? WHERE id=?`,
+    groupId,
+    clientId,
+  );
+  return ((result as any)?.changes || 0) > 0;
+}
+
 export function getClientIp(id: string): string | null {
   const row = db.query<{ ip: string }>(`SELECT ip FROM clients WHERE id=?`).get(id);
   return row?.ip || null;
@@ -798,107 +881,125 @@ export function listClients(filters: ListFilters): ListResult {
     requireBuildOwner,
     allowedClientIds,
     deniedClientIds,
+    groupFilter,
   } = filters;
   const where: string[] = [];
   const params: any[] = [];
 
   if (search) {
     where.push(
-      "(LOWER(COALESCE(host,'')) LIKE ? OR LOWER(COALESCE(user,'')) LIKE ? OR LOWER(COALESCE(nickname,'')) LIKE ? OR LOWER(COALESCE(custom_tag,'')) LIKE ? OR LOWER(COALESCE(custom_tag_note,'')) LIKE ? OR LOWER(id) LIKE ?)",
+      "(LOWER(COALESCE(c.host,'')) LIKE ? OR LOWER(COALESCE(c.user,'')) LIKE ? OR LOWER(COALESCE(c.nickname,'')) LIKE ? OR LOWER(COALESCE(c.custom_tag,'')) LIKE ? OR LOWER(COALESCE(c.custom_tag_note,'')) LIKE ? OR LOWER(c.id) LIKE ? OR LOWER(COALESCE(g.name,'')) LIKE ?)",
     );
     const needle = `%${search}%`;
-    params.push(needle, needle, needle, needle, needle, needle);
+    params.push(needle, needle, needle, needle, needle, needle, needle);
   }
 
   if (statusFilter === "online") {
-    where.push("online=1");
+    where.push("c.online=1");
   } else if (statusFilter === "offline") {
-    where.push("online=0");
+    where.push("c.online=0");
   }
 
   if (enrollmentFilter && enrollmentFilter !== "all") {
     if (enrollmentFilter === "pending") {
-      where.push("(enrollment_status='pending' OR enrollment_status IS NULL)");
+      where.push("(c.enrollment_status='pending' OR c.enrollment_status IS NULL)");
     } else {
-      where.push("enrollment_status=?");
+      where.push("c.enrollment_status=?");
       params.push(enrollmentFilter);
     }
   }
 
   if (osFilter && osFilter !== "all") {
-    where.push("os=?");
+    where.push("c.os=?");
     params.push(osFilter);
   }
 
   if (countryFilter && countryFilter !== "all") {
-    where.push("UPPER(COALESCE(country,'ZZ'))=?");
+    where.push("UPPER(COALESCE(c.country,'ZZ'))=?");
     params.push(countryFilter.toUpperCase());
   }
 
   if (typeof builtByUserId === "number") {
-    where.push("built_by_user_id=?");
+    where.push("c.built_by_user_id=?");
     params.push(builtByUserId);
   }
 
   if (requireBuildOwner) {
-    where.push("built_by_user_id IS NOT NULL");
+    where.push("c.built_by_user_id IS NOT NULL");
   }
 
   if (Array.isArray(allowedClientIds)) {
     if (allowedClientIds.length === 0) {
       where.push("1=0");
     } else {
-      where.push(`id IN (${allowedClientIds.map(() => "?").join(",")})`);
+      where.push(`c.id IN (${allowedClientIds.map(() => "?").join(",")})`);
       params.push(...allowedClientIds);
     }
   }
 
   if (Array.isArray(deniedClientIds) && deniedClientIds.length > 0) {
-    where.push(`id NOT IN (${deniedClientIds.map(() => "?").join(",")})`);
+    where.push(`c.id NOT IN (${deniedClientIds.map(() => "?").join(",")})`);
     params.push(...deniedClientIds);
+  }
+
+  if (groupFilter && groupFilter !== "all") {
+    if (groupFilter === "none") {
+      where.push("c.group_id IS NULL");
+    } else {
+      const gid = Number(groupFilter);
+      if (Number.isFinite(gid)) {
+        where.push("c.group_id=?");
+        params.push(gid);
+      }
+    }
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const orderBy = (() => {
-    const online = "online DESC";
-    const bookmark = "bookmarked DESC";
+    const online = "c.online DESC";
+    const bookmark = "c.bookmarked DESC";
     switch (sort) {
       case "stable":
-        return `ORDER BY ${online}, ${bookmark}, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, c.id ASC`;
       case "ping_asc":
-        return `ORDER BY ${online}, ${bookmark}, ping_ms IS NULL, ping_ms ASC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, c.ping_ms IS NULL, c.ping_ms ASC, c.id ASC`;
       case "ping_desc":
-        return `ORDER BY ${online}, ${bookmark}, ping_ms IS NULL, ping_ms DESC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, c.ping_ms IS NULL, c.ping_ms DESC, c.id ASC`;
       case "host_asc":
-        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(nickname, host)) ASC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(c.nickname, c.host)) ASC, c.id ASC`;
       case "host_desc":
-        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(nickname, host)) DESC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(c.nickname, c.host)) DESC, c.id ASC`;
       case "country_asc":
-        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(country, 'zz')) ASC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(c.country, 'zz')) ASC, c.id ASC`;
       case "country_desc":
-        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(country, 'zz')) DESC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, LOWER(COALESCE(c.country, 'zz')) DESC, c.id ASC`;
       case "admin_first":
-        return `ORDER BY ${online}, ${bookmark}, is_admin DESC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, c.is_admin DESC, c.id ASC`;
+      case "group_asc":
+        return `ORDER BY ${online}, ${bookmark}, g.name IS NULL, LOWER(g.name) ASC, c.id ASC`;
+      case "group_desc":
+        return `ORDER BY ${online}, ${bookmark}, g.name IS NULL, LOWER(g.name) DESC, c.id ASC`;
       default:
-        return `ORDER BY ${online}, ${bookmark}, last_seen DESC, id ASC`;
+        return `ORDER BY ${online}, ${bookmark}, c.last_seen DESC, c.id ASC`;
     }
   })();
 
   const totalRow = db
-    .query<{ c: number }>(`SELECT COUNT(*) as c FROM clients ${whereSql}`)
+    .query<{ c: number }>(`SELECT COUNT(*) as c FROM clients c LEFT JOIN client_groups g ON g.id = c.group_id ${whereSql}`)
     .get(...params) ?? { c: 0 };
   const onlineRow = db
     .query<{ c: number }>(
-      `SELECT COUNT(*) as c FROM clients ${whereSql ? `${whereSql} AND online=1` : "WHERE online=1"}`,
+      `SELECT COUNT(*) as c FROM clients c LEFT JOIN client_groups g ON g.id = c.group_id ${whereSql ? `${whereSql} AND c.online=1` : "WHERE c.online=1"}`,
     )
     .get(...params) ?? { c: 0 };
   const offset = (page - 1) * pageSize;
 
   const rows = db
     .query<any>(
-      `SELECT id, hwid, role, ip, host, os, arch, version, user, nickname, custom_tag as customTag, custom_tag_note as customTagNote, monitors, country, last_seen as lastSeen, online, ping_ms as pingMs, bookmarked, build_tag as buildTag, built_by_user_id as builtByUserId, enrollment_status as enrollmentStatus, public_key as publicKey, key_fingerprint as keyFingerprint, cpu, gpu, ram, is_admin as isAdmin, elevation, permissions, disconnect_reason as disconnectReason, disconnect_detail as disconnectDetail
-       FROM clients
+      `SELECT c.id, c.hwid, c.role, c.ip, c.host, c.os, c.arch, c.version, c.user, c.nickname, c.custom_tag as customTag, c.custom_tag_note as customTagNote, c.monitors, c.country, c.last_seen as lastSeen, c.online, c.ping_ms as pingMs, c.bookmarked, c.build_tag as buildTag, c.built_by_user_id as builtByUserId, c.enrollment_status as enrollmentStatus, c.public_key as publicKey, c.key_fingerprint as keyFingerprint, c.cpu, c.gpu, c.ram, c.is_admin as isAdmin, c.elevation, c.permissions, c.disconnect_reason as disconnectReason, c.disconnect_detail as disconnectDetail, c.group_id as groupId, g.name as groupName, g.color as groupColor
+       FROM clients c
+       LEFT JOIN client_groups g ON g.id = c.group_id
        ${whereSql}
        ${orderBy}
        LIMIT ? OFFSET ?`,
@@ -937,6 +1038,9 @@ export function listClients(filters: ListFilters): ListResult {
     permissions: c.permissions ? (() => { try { return JSON.parse(c.permissions); } catch { return null; } })() : null,
     disconnectReason: c.disconnectReason || null,
     disconnectDetail: c.disconnectDetail || null,
+    groupId: typeof c.groupId === "number" ? c.groupId : null,
+    groupName: c.groupName || null,
+    groupColor: c.groupColor || null,
     thumbnail: getThumbnail(c.id),
   }));
 
