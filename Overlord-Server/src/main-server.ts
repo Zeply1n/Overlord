@@ -39,7 +39,7 @@ import { isAuthorizedAgentRequest } from "./server/agent-auth";
 import { generateBuildMutex, sanitizeMutex, sanitizeOutputName } from "./server/build-utils";
 import { detectUploadOs, normalizeClientOs, type DeployOs } from "./server/deploy-utils";
 import { CORS_HEADERS } from "./server/http-security";
-import { mimeType, secureHeaders, securePluginHeaders } from "./server/http-utils";
+import { mimeType, secureHeaders } from "./server/http-utils";
 import { sanitizePluginId } from "./server/plugin-utils";
 import { dispatchAutoScriptsForConnection } from "./server/auto-script-dispatch";
 import { dispatchAutoDeploysForConnection } from "./server/auto-deploy-dispatch";
@@ -421,7 +421,6 @@ async function startServer() {
       enqueuePluginEvent: notificationPluginHandlers.enqueuePluginEvent,
       drainPluginUIEvents: notificationPluginHandlers.drainPluginUIEvents,
       secureHeaders,
-      securePluginHeaders,
       mimeType,
     },
     fileShare: {
