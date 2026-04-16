@@ -58,7 +58,6 @@ import { checkFeatureAccess } from "./feature-gate.js";
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const mouseCtrl = document.getElementById("mouseCtrl");
   const kbdCtrl = document.getElementById("kbdCtrl");
-  const cursorCtrl = document.getElementById("cursorCtrl");
   const autoExplorerCtrl = document.getElementById("autoExplorerCtrl");
   const qualitySlider = document.getElementById("qualitySlider");
   const qualityValue = document.getElementById("qualityValue");
@@ -72,11 +71,14 @@ import { checkFeatureAccess } from "./feature-gate.js";
   const viewerFps = document.getElementById("viewerFps");
   const statusEl = document.getElementById("streamStatus");
   const clipboardSyncCtrl = document.getElementById("clipboardSyncCtrl");
+  const dxgiCtrl = document.getElementById("dxgiCtrl");
+  const hvncResolutionSelect = document.getElementById("hvncResolutionSelect");
 
   function syncInputEnableState() {
     if (mouseCtrl) sendCmd("hvnc_enable_mouse", { enabled: mouseCtrl.checked });
     if (kbdCtrl) sendCmd("hvnc_enable_keyboard", { enabled: kbdCtrl.checked });
-    if (cursorCtrl) sendCmd("hvnc_enable_cursor", { enabled: cursorCtrl.checked });
+    if (dxgiCtrl) sendCmd("hvnc_enable_dxgi", { enabled: dxgiCtrl.checked });
+    pushHvncResolution();
   }
   let activeClientId = clientId;
   let renderCount = 0;
@@ -558,9 +560,23 @@ import { checkFeatureAccess } from "./feature-gate.js";
   kbdCtrl.addEventListener("change", function () {
     sendCmd("hvnc_enable_keyboard", { enabled: kbdCtrl.checked });
   });
-  cursorCtrl.addEventListener("change", function () {
-    sendCmd("hvnc_enable_cursor", { enabled: cursorCtrl.checked });
-  });
+  if (dxgiCtrl) {
+    dxgiCtrl.addEventListener("change", function () {
+      sendCmd("hvnc_enable_dxgi", { enabled: dxgiCtrl.checked });
+    });
+  }
+
+  function pushHvncResolution() {
+    if (hvncResolutionSelect) {
+      const maxHeight = parseInt(hvncResolutionSelect.value, 10);
+      sendCmd("hvnc_set_resolution", { maxHeight: maxHeight });
+    }
+  }
+  if (hvncResolutionSelect) {
+    hvncResolutionSelect.addEventListener("change", function () {
+      pushHvncResolution();
+    });
+  }
 
   if (qualitySlider) {
     updateQualityLabel(qualitySlider.value);
