@@ -6,8 +6,7 @@ let countryCounts = {};
 let maxCountryCount = 0;
 let latestByCountry = {};
 
-const GEOJSON_URL =
-  "https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/data/countries.geojson";
+const GEOJSON_URL = "/vendor/geo-countries/countries.geojson";
 
 if (typeof Chart !== "undefined") {
   Chart.defaults.color = "#cbd5e1";

@@ -22,6 +22,8 @@ fi
 echo "[server] using bun at: $(command -v $BUN_BIN)"
 echo "[server] bun install..."
 "$BUN_BIN" install
+echo "[server] building vendor assets..."
+"$BUN_BIN" run vendor
 echo "[server] starting bun dev (foreground)"
 # Use exec so the script process is replaced by the bun process. This keeps the
 # bun process as a child of the dispatcher so the dispatcher can kill it.

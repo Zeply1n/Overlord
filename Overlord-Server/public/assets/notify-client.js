@@ -330,7 +330,7 @@ function ensureMsgpackrLoaded() {
   if (msgpackLoadPromise) return msgpackLoadPromise;
   msgpackLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/msgpackr@1.11.8/dist/index.js";
+    script.src = "/vendor/msgpackr/msgpackr.js";
     script.async = true;
     script.onload = () => resolve();
     script.onerror = (err) => reject(err);

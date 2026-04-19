@@ -74,7 +74,9 @@ export async function handleAssetsRoutes(
     return new Response("Not found", { status: 404 });
   }
 
-  if (!(req.method === "GET" && url.pathname.startsWith("/assets/"))) {
+  const isAssets = req.method === "GET" && url.pathname.startsWith("/assets/");
+  const isVendor = req.method === "GET" && url.pathname.startsWith("/vendor/");
+  if (!isAssets && !isVendor) {
     return null;
   }
 
@@ -89,8 +91,10 @@ export async function handleAssetsRoutes(
     return new Response("Not found", { status: 404 });
   }
 
-  const assetsRoot = path.join(deps.PUBLIC_ROOT, "assets");
-  const relativePath = decodedPath.replace(/^\/assets\//, "");
+  const subdir = isVendor ? "vendor" : "assets";
+  const prefix = isVendor ? /^\/vendor\// : /^\/assets\//;
+  const assetsRoot = path.join(deps.PUBLIC_ROOT, subdir);
+  const relativePath = decodedPath.replace(prefix, "");
   const resolvedPath = path.resolve(assetsRoot, relativePath);
   const rootWithSep = assetsRoot.endsWith(path.sep) ? assetsRoot : `${assetsRoot}${path.sep}`;
 
