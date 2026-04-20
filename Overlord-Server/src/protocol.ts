@@ -270,6 +270,10 @@ export type PluginManifest = {
     css?: string;
     js?: string;
   };
+  navbar?: {
+    label?: string;
+    icon?: string;
+  };
 };
 
 export type PluginSignatureInfo = {

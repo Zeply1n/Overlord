@@ -80,6 +80,7 @@ export async function ensurePluginExtracted(
   let htmlEntry: Buffer | null = null;
   let cssEntry: Buffer | null = null;
   let jsEntry: Buffer | null = null;
+  let configEntry: Buffer | null = null;
   const nativeBinaries: Map<string, Buffer> = new Map();
 
   for (const entry of entries) {
@@ -94,6 +95,8 @@ export async function ensurePluginExtracted(
       cssEntry = entry.getData();
     } else if (lower.endsWith(".js")) {
       jsEntry = entry.getData();
+    } else if (lower === "config.json") {
+      configEntry = entry.getData();
     }
   }
 
@@ -114,10 +117,20 @@ export async function ensurePluginExtracted(
   await fs.writeFile(path.join(assetsDir, `${safeId}.css`), cssEntry);
   await fs.writeFile(path.join(assetsDir, `${safeId}.js`), jsEntry);
 
+  let extraConfig: any = {};
+  if (configEntry) {
+    try {
+      extraConfig = JSON.parse(configEntry.toString("utf-8"));
+    } catch (err) {
+      logger.warn(`[plugin] invalid config.json in bundle ${safeId}, ignoring: ${err}`);
+    }
+  }
+
   const manifest: PluginManifest = {
     id: safeId,
-    name: safeId,
-    version: "1.0.0",
+    name: extraConfig.name || safeId,
+    version: extraConfig.version || "1.0.0",
+    description: extraConfig.description,
     binaries: binariesMap,
     entry: `${safeId}.html`,
     assets: {
@@ -125,6 +138,7 @@ export async function ensurePluginExtracted(
       css: `${safeId}.css`,
       js: `${safeId}.js`,
     },
+    ...(extraConfig.navbar && { navbar: extraConfig.navbar }),
   };
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 

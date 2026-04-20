@@ -31,7 +31,8 @@ sample.zip
   ├─ sample-windows-amd64.dll
   ├─ sample.html
   ├─ sample.css
-  └─ sample.js
+  ├─ sample.js
+  └─ config.json          (optional — enables navbar & metadata)
 ```
 
 When the server extracts the zip:
@@ -42,7 +43,7 @@ Overlord-Server/plugins/sample/
   ├─ sample-linux-arm64.so
   ├─ sample-darwin-arm64.dylib
   ├─ sample-windows-amd64.dll
-  ├─ manifest.json          (auto-generated)
+  ├─ manifest.json          (auto-generated, merged with config.json)
   └─ assets/
      ├─ sample.html
      ├─ sample.css
@@ -66,13 +67,14 @@ The server will **never** send an x64 binary to an ARM client (or vice versa). I
 
 ### Manifest fields
 
-The auto-generated manifest:
+The auto-generated manifest (merged with `config.json` if present):
 
 ```json
 {
   "id": "sample",
-  "name": "sample",
+  "name": "Sample Plugin",
   "version": "1.0.0",
+  "description": "An example plugin",
   "binaries": {
     "linux-amd64": "sample-linux-amd64.so",
     "linux-arm64": "sample-linux-arm64.so",
@@ -84,9 +86,40 @@ The auto-generated manifest:
     "html": "sample.html",
     "css": "sample.css",
     "js": "sample.js"
+  },
+  "navbar": {
+    "label": "Sample",
+    "icon": "fa-cube"
   }
 }
 ```
+
+The `navbar` field is only present when a `config.json` is included in the bundle.
+
+### Global Nav Bar Plugins (`config.json`)
+
+Include an optional `config.json` in the root of your plugin zip to register the plugin in the global navigation bar. This is suited for plugins that operate across all clients (e.g. a global clipboard manager) rather than requiring a specific `?clientId=` to be selected first.
+
+```json
+{
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "description": "A global plugin",
+  "navbar": {
+    "label": "My Plugin",
+    "icon": "fa-cube"
+  }
+}
+```
+
+**`navbar.icon`** accepts any [Font Awesome 6 solid icon class](https://fontawesome.com/icons?s=solid) without the `fa-solid` prefix, e.g. `fa-clipboard`, `fa-network-wired`, `fa-key`.
+
+When the server extracts the bundle:
+- `config.json` fields are merged into the auto-generated `manifest.json`
+- If the plugin is also `enabled`, it will appear in the **"Plugin Apps"** group in the sidebar/topbar
+- Clicking the nav entry opens the plugin at `/plugins/<id>` — **without** a `?clientId=` parameter, suitable for global operation
+
+> **Important:** `config.json` must be in the **root** of the zip (not inside a subfolder). The build scripts automatically include it if it exists at the plugin source root. The manifest is re-generated on every extraction (triggered when the zip is newer than `manifest.json`), so keep `config.json` in the zip to avoid losing the navbar registration on re-upload.
 
 ## 2) Plugin ABI (all languages)
 
@@ -465,12 +498,26 @@ Plugin UI is embedded directly in the main page at:
 /plugins/<pluginId>?clientId=<CLIENT_ID>
 ```
 
+For **global nav bar plugins** (those registered via `config.json`), the UI opens without a client ID:
+
+```
+/plugins/<pluginId>
+```
+
 The server reads your `<pluginId>.html`, extracts the body content, and renders it inside the standard Overlord layout. Your CSS and JS are loaded from `/plugins/<pluginId>/assets/`.
 
-To get the `clientId` in your JS:
+To get the `clientId` in your JS (for per-client plugins):
 
 ```js
 const clientId = new URLSearchParams(window.location.search).get("clientId");
+```
+
+For global plugins, `clientId` will be `null`. Use `/api/clients?status=online&pageSize=1000` to enumerate connected clients and broadcast events to all of them:
+
+```js
+const res = await fetch("/api/clients?status=online&pageSize=1000");
+const { items } = await res.json();
+const onlineIds = items.filter(c => c.online).map(c => c.id);
 ```
 
 ## 6) Runtime: how events flow
@@ -556,6 +603,42 @@ Your plugin JS runs in the same browsing context as the main UI, so `fetch()` ca
 
 Plugin assets (CSS, JS, images) are served from `/plugins/<pluginId>/assets/`.
 
+### CSP-safe JavaScript
+
+The Overlord UI enforces a **Content Security Policy** that blocks `unsafe-inline` script execution. This means:
+
+- **No** `onclick="..."`, `onchange="..."`, or other inline event handler attributes in HTML strings
+- **No** `javascript:` URLs
+- **No** `eval()` or `new Function()`
+
+When dynamically generating HTML (e.g. in a `renderRules()` function), use `data-*` attributes and event delegation instead:
+
+```js
+// ❌ Blocked by CSP
+element.innerHTML = `<button onclick="removeItem(${i})">Remove</button>`;
+
+// ✅ CSP-safe
+element.innerHTML = `<button class="remove-btn" data-index="${i}">Remove</button>`;
+element.addEventListener("click", (e) => {
+  if (!e.target.classList.contains("remove-btn")) return;
+  const index = parseInt(e.target.getAttribute("data-index"), 10);
+  removeItem(index);
+});
+```
+
+### Avoiding redeclaration errors
+
+Because the plugin UI is injected into a persistent single-page application, navigating away and back to a plugin page causes the plugin's JS file to be re-evaluated in the **same global scope**. Using top-level `const` / `let` declarations will throw `SyntaxError: Identifier '...' has already been declared` on the second load.
+
+**Wrap all plugin JS in an IIFE** to scope everything locally:
+
+```js
+(() => {
+  const MY_CONST = "value"; // safe — scoped to this closure
+  // ... rest of plugin code
+})();
+```
+
 ## 8) API surface
 
 ### Plugin management
@@ -597,6 +680,14 @@ By default, plugins are only loaded when manually triggered via the API or UI. F
 When auto-load is enabled for a plugin, the server will automatically load it onto every client that connects. If the client already has the plugin loaded, it's skipped — no duplicate loads.
 
 You can also configure **auto-start events** — a list of events that are queued and delivered to the plugin immediately after it loads. This lets you pre-configure the plugin without any manual interaction.
+
+### Autostart switch in global plugin UI
+
+Global nav bar plugins (those with a `navbar` entry in `config.json`) can expose an **"Autostart on new clients"** toggle directly in their UI. This checkbox controls whether new clients that connect will automatically have the plugin loaded and the current configuration replayed.
+
+When the switch is checked, the UI calls `POST /api/plugins/<id>/autoload` with `autoLoad: true` and the current `autoStartEvents` (rule set + start order). When unchecked, it sets `autoLoad: false` — new clients won't receive the plugin unless manually triggered.
+
+The switch state is saved to the server and restored when the plugin page is reopened.
 
 ### Enable auto-load
 

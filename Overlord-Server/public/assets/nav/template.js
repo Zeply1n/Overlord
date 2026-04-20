@@ -4,7 +4,7 @@ export const NAV_MODE_KEY = "sb_mode";
    NAVIGATION DATA — single source of truth
    ────────────────────────────────────────────── */
 
-const NAV_GROUPS = [
+export const NAV_GROUPS = [
   {
     id: "clients",
     label: "Clients",
@@ -65,13 +65,21 @@ const NAV_GROUPS = [
       { href: "/metrics",       label: "Metrics",        icon: "fa-chart-line",      iconColor: "text-emerald-400", linkId: "metrics-link" },
     ],
   },
+  {
+    id: "plugin_apps",
+    label: "Plugin Apps",
+    icon: "fa-plug",
+    iconColor: "text-fuchsia-400",
+    hidden: true,
+    children: [],
+  }
 ];
 
 /* ──────────────────────────────────────────────
    TOPBAR — dropdown menus
    ────────────────────────────────────────────── */
 
-function dropdownItem(child) {
+export function dropdownItem(child) {
   const hiddenCls = child.hidden ? " hidden" : "";
   const badgeHtml = child.hasBadge
     ? `<span id="enrollment-badge" class="nav-dd-badge hidden"></span>`
@@ -100,8 +108,9 @@ function dropdownGroup(group) {
   }
   // Dropdown group — wrapper always visible, children control visibility
   const items = group.children.map(dropdownItem).join("");
+  const groupHidden = group.hidden ? " hidden" : "";
   return `
-    <div class="nav-dd-wrapper" data-group="${group.id}">
+    <div class="nav-dd-wrapper${groupHidden}" data-group="${group.id}">
       <button class="nav-dd-group-btn" data-group="${group.id}" aria-haspopup="true" aria-expanded="false">
         <i class="fa-solid ${group.icon} ${group.iconColor}"></i>
         <span>${group.label}</span>
@@ -217,7 +226,7 @@ function mountTopbar(host) {
    SIDEBAR — tree-style expandable
    ────────────────────────────────────────────── */
 
-function sidebarChild(child) {
+export function sidebarChild(child) {
   const hiddenCls = child.hidden ? " hidden" : "";
   const badgeHtml = child.hasBadge
     ? `<span id="enrollment-badge" class="sb-badge hidden"></span>`
@@ -246,8 +255,9 @@ function sidebarGroup(group) {
   }
   // Expandable group — wrapper always visible, children control visibility
   const childrenHtml = group.children.map(sidebarChild).join("");
+  const groupHidden = group.hidden ? " hidden" : "";
   return `
-    <div class="sb-group" data-group="${group.id}">
+    <div class="sb-group${groupHidden}" data-group="${group.id}">
       <button class="sb-group-btn" data-group="${group.id}" aria-expanded="false">
         <i class="fa-solid ${group.icon} ${group.iconColor} sb-icon"></i>
         <span class="sb-text">${group.label}</span>
