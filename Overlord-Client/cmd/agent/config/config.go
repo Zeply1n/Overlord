@@ -74,6 +74,63 @@ type Config struct {
 	SleepSeconds          int
 }
 
+func sanitizeCountryCode(code string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if len(code) != 2 {
+		return ""
+	}
+	for _, r := range code {
+		if r < 'A' || r > 'Z' {
+			return ""
+		}
+	}
+	return code
+}
+
+func resolveCountryFromSite() string {
+	lookupURL := strings.TrimSpace(os.Getenv("OVERLORD_COUNTRY_LOOKUP_URL"))
+	if lookupURL == "" {
+		lookupURL = "https://api.country.is/"
+	}
+
+	parsed, err := url.Parse(lookupURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		log.Printf("[config] WARNING: invalid OVERLORD_COUNTRY_LOOKUP_URL %q", lookupURL)
+		return ""
+	}
+
+	client := &http.Client{Timeout: 4 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "overlord-agent/"+AgentVersion)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	if err != nil {
+		return ""
+	}
+
+	var payload struct {
+		Country string `json:"country"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	return sanitizeCountryCode(payload.Country)
+}
+
 func Load() Config {
 	//garble:controlflow block_splits=10 junk_jumps=10 flatten_passes=2
 	server := strings.TrimSpace(os.Getenv("OVERLORD_SERVER"))
@@ -190,6 +247,11 @@ func Load() Config {
 		mutex = ""
 	}
 
+	resolvedCountry := sanitizeCountryCode(firstNonEmpty(strings.TrimSpace(fileSettings.Country), DefaultCountry))
+	if resolvedCountry == "" {
+		resolvedCountry = resolveCountryFromSite()
+	}
+
 	return Config{
 		ServerURLs:            serverURLs,
 		ServerIndex:           serverIndex,
@@ -202,7 +264,7 @@ func Load() Config {
 		HWID:                  firstNonEmpty(fileSettings.HWID, defaultHWID),
 		EnablePersistence:     enablePersistence,
 		CriticalProcess:       criticalProcess,
-		Country:               firstNonEmpty(strings.TrimSpace(fileSettings.Country), DefaultCountry),
+		Country:               resolvedCountry,
 		OS:                    runtime.GOOS,
 		Arch:                  runtime.GOARCH,
 		Version:               firstNonEmpty(fileSettings.Version, AgentVersion),

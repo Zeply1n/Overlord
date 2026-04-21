@@ -1,12 +1,5 @@
 import type { ServerWebSocket } from "bun";
 import { v4 as uuidv4 } from "uuid";
-let _geoip: typeof import("geoip-lite") extends { default: infer D } ? D : never;
-async function getGeoip() {
-  if (!_geoip) {
-    _geoip = (await import("geoip-lite")).default;
-  }
-  return _geoip;
-}
 import { logAudit, AuditAction } from "../../auditLog";
 import * as clientManager from "../../clientManager";
 import { clientExists, setOnlineState, upsertClientRow, getClientEnrollmentStatus, setClientEnrollmentStatus, lookupClientByPublicKey, getClientPublicKeyById, getBuildByTag } from "../../db";
@@ -117,6 +110,12 @@ type WsLifecycleDeps = {
 
 const ENROLLMENT_TIMEOUT_MS = 30_000;
 const enrollmentTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+
+function sanitizeCountryCode(val: unknown): string {
+  if (typeof val !== "string") return "ZZ";
+  const code = val.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "ZZ";
+}
 
 function clearEnrollmentTimeout(clientId: string) {
   const t = enrollmentTimeouts.get(clientId);
@@ -310,10 +309,7 @@ export async function handleWebSocketMessage(
         }
 
         if (enrollmentStatus === "pending") {
-          const geoip = await getGeoip();
-          const geo = ip ? geoip.lookup(ip) : undefined;
-          const countryRaw = geo?.country || (payload as any).country || "ZZ";
-          const country = /^[A-Z]{2}$/i.test(countryRaw) ? countryRaw.toUpperCase() : "ZZ";
+          const country = sanitizeCountryCode((payload as any).country);
 
           const _s = (v: unknown, max = 256): string | undefined => {
             if (typeof v !== "string") return undefined;

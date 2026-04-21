@@ -1,13 +1,5 @@
 import { encodeMessage, decodeMessage, WireMessage } from "./protocol";
 import { Buffer } from "node:buffer";
-
-let _geoip: typeof import("geoip-lite") extends { default: infer D } ? D : never;
-async function getGeoip() {
-  if (!_geoip) {
-    _geoip = (await import("geoip-lite")).default;
-  }
-  return _geoip;
-}
 import { ClientInfo } from "./types";
 import {
   consumeThumbnailRequest,
@@ -22,6 +14,12 @@ import { metrics } from "./metrics";
 function sanitizeInfoString(val: unknown, maxLen = 256): string | undefined {
   if (typeof val !== "string") return undefined;
   return val.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").slice(0, maxLen);
+}
+
+function sanitizeCountryCode(val: unknown): string {
+  if (typeof val !== "string") return "ZZ";
+  const code = val.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : "ZZ";
 }
 
 const MAX_PING_RTT_MS = 15_000;
@@ -110,14 +108,7 @@ export async function handleHello(
   info.cpu = sanitizeInfoString((payload as any).cpu) || info.cpu;
   info.gpu = sanitizeInfoString((payload as any).gpu) || info.gpu;
   info.ram = sanitizeInfoString((payload as any).ram, 64) || info.ram;
-  const geoip = await getGeoip();
-  const geo = ip ? geoip.lookup(ip) : undefined;
-  const countryRaw =
-    geo?.country || (payload as any).country || info.country || "ZZ";
-  const country = /^[A-Z]{2}$/i.test(countryRaw)
-    ? countryRaw.toUpperCase()
-    : "ZZ";
-  info.country = country;
+  info.country = sanitizeCountryCode((payload as any).country || info.country);
   info.lastSeen = Date.now();
   info.online = true;
 
